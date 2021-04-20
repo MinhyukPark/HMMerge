@@ -19,7 +19,7 @@ pp = pprint.PrettyPrinter(indent=4)
 @click.option("--fragmentary-sequence-file", required=True, type=click.Path(exists=True), help="The input fragmentary sequence file to SEPP")
 @click.option("--output-prefix", required=True, type=click.Path(), help="Output prefix")
 def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix):
-    mappings = create_mappings(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix)
+    mappings = create_mappings(input_dir, backbone_alignment)
     print("the mappings are")
     pp.pprint(mappings)
     bitscores = get_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix)
@@ -206,25 +206,21 @@ def get_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, outp
 
 
 
-def create_mappings(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix):
+def create_mappings(input_dir, backbone_alignment, output_prefix):
     num_hmms = len(list(glob.glob(input_dir + "/P_*")))
     input_fasta_filenames = []
     for current_hmm_index in range(num_hmms):
         for current_input_file in glob.glob(input_dir + "/P_" + str(current_hmm_index) + "/A_" + str(current_hmm_index) + "_0/hmmbuild.input.*.fasta"):
             input_fasta_filenames.append(current_input_file)
-    return create_mappings_helper(input_fasta_filenames, num_hmms, backbone_alignment, fragmentary_sequence_file, output_prefix)
+    return create_mappings_helper(input_fasta_filenames, backbone_alignment)
 
-def create_mappings_helper(input_fasta_filenames, num_hmms, backbone_alignment, fragmentary_sequence_file, output_prefix):
+def create_mappings_helper(input_fasta_filenames, backbone_alignment):
+    num_hmms = len(input_fasta_filenames)
     hmm_weights = {}
     backbone_records = SeqIO.to_dict(SeqIO.parse(backbone_alignment, "fasta"))
     total_nodes = None
     for record in backbone_records:
         total_nodes = len(backbone_records[record].seq)
-        break
-
-    fragment_length = None
-    for fragmentary_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
-        fragment_length = len(fragmentary_record.seq)
         break
 
     match_state_mappings = {} # from hmm_index to {map of backbone match state index to current input hmm build fasta's match state index}
@@ -257,7 +253,7 @@ def create_mappings_helper(input_fasta_filenames, num_hmms, backbone_alignment, 
                 if key_so_far in current_mapping:
                     assert cumulative_mapping[key_so_far] == current_mapping[key_so_far]
             cumulative_mapping.update(current_mapping)
-        pp.pprint(match_state_mappings)
+        # pp.pprint(match_state_mappings)
         assert current_hmm_index not in match_state_mappings
         match_state_mappings[current_hmm_index] = cumulative_mapping
 
