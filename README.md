@@ -14,6 +14,8 @@ Mapping will be a map of input fasta filename indices to a secondary map
 
 The secondary map is a mapping of column index in the backbone alignment to the corresponding column index in the input fasta filename
 
+For some example input files and expected outputs, look at [the test directories](test/merge_test) and [the test file](test.py)
+
 
 ## Requirements
 ---
