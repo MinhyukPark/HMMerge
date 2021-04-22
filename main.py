@@ -51,6 +51,68 @@ def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_
 
     print("aligned sequences are")
     pp.pprint(aligned_sequences_dict)
+    merged_alignment = get_merged_alignments(aligned_sequences_dict, backbone_alignment)
+    print("merged alignment is")
+    pp.pprint(merged_alignment)
+
+def get_merged_alignments(aligned_sequences_dict, backbone_alignment):
+    merged_alignment = {}
+    for backbone_sequence_record in SeqIO.parse(backbone_alignment, "fasta"):
+        merged_alignment[backbone_sequence_record.id] = str(backbone_sequence_record.seq)
+
+    for aligned_sequence_id,aligned_sequence in aligned_sequences_dict.items():
+        merged_alignment[aligned_sequence_id] = ""
+        for current_position,current_letter in enumerate(aligned_sequence):
+            print("processing " + current_letter + " at position: " + str(current_position))
+            if(current_letter == "-"):
+                # deletion site so just advance the backbone alignment
+                print("deletion in transitivity merge")
+                merged_alignment[aligned_sequence_id] += current_letter
+            elif(current_letter.isupper()):
+                # homology
+                print("homology in transitivity merge")
+                is_already_insertion_column = False
+                for backbone_sequence_id,backbone_sequence in merged_alignment.items():
+                    if(current_position == len(backbone_sequence) or backbone_sequence[current_position].islower()):
+                        if(current_position < len(backbone_sequence)):
+                            print(backbone_sequence[current_position] + " is lower")
+                            is_already_insertion_column = True
+                        else:
+                            print("end of sequence")
+                        break
+                if(is_already_insertion_column):
+                    for i in range(current_position, len(backbone_sequence)):
+                        if(backbone_sequence[i].islower()):
+                            merged_alignment[aligned_sequence_id] += "-"
+                    merged_alignment[aligned_sequence_id] += current_letter
+                merged_alignment[aligned_sequence_id] += current_letter
+            elif(current_letter.islower()):
+                # this means it's an insertion site
+                print("insertion in transitivity merge")
+                is_already_insertion_column = False
+                for backbone_sequence_id,backbone_sequence in merged_alignment.items():
+                    if(current_position == len(backbone_sequence) or backbone_sequence[current_position].islower()):
+                        if(current_position < len(backbone_sequence)):
+                            print(backbone_sequence[current_position] + " is lower")
+                            is_already_insertion_column = True
+                        else:
+                            print("end of sequence")
+                        break
+                if(not is_already_insertion_column):
+                    print("creating a new column for insertion")
+                    for backbone_sequence_id,backbone_sequence in merged_alignment.items():
+                        if(backbone_sequence_id != aligned_sequence_id):
+                            merged_alignment[backbone_sequence_id] = backbone_sequence[:current_position] + "-" + backbone_sequence[current_position:]
+                merged_alignment[aligned_sequence_id] += current_letter
+
+    alignment_length = None
+    for aligned_sequence in merged_alignment:
+        if(alignment_length == None):
+            alignment_length == len(aligned_sequence)
+        else:
+            assert alignment_length == len(aligned_sequence)
+    return merged_alignment
+
 
 # def aligned_sequences(backtraced_states_dict, fragmentary_sequence_file):
 #     aligned_sequences = {}
@@ -131,7 +193,7 @@ def run_viterbi(adjacency_matrices_dict, emission_probabilities_dict, transition
                             backtrace_table[sequence_index,state_index] = (sequence_index,search_state_index)
                     lookup_table[sequence_index,state_index] = max_value
 
-        readable_table = np.around(lookup_table, decimals=1)
+        readable_table = np.around(lookup_table, decimals=3)
         for state_index in range(len(emission_probabilities)):
             pp.pprint(readable_table[:,state_index])
             pp.pprint(transition_probabilities[state_index,:])
@@ -142,11 +204,25 @@ def run_viterbi(adjacency_matrices_dict, emission_probabilities_dict, transition
             pp.pprint(current_position)
             current_sequence_index = current_position[0]
             current_state = current_position[1]
+
             backtraced_states.append(current_state)
             current_position = backtrace_table[current_position]
             if(np.sum(emission_probabilities[current_state]) > 0):
-                aligned_sequence += current_fragmentary_sequence[current_sequence_index - 1]
-            else:
+                # current position is already the previous position here
+                previous_state_in_sequence = current_position[1]
+                assert previous_state_in_sequence <= current_state
+                assert transition_probabilities[previous_state_in_sequence][current_state] > 0
+                print(current_state)
+                print(previous_state_in_sequence)
+                assert adjacency_matrix[previous_state_in_sequence][current_state] > 0
+                if(adjacency_matrix[previous_state_in_sequence][current_state] == 2 or is_insertion(current_state)):
+                    print("insertion in fragment")
+                    aligned_sequence += current_fragmentary_sequence[current_sequence_index - 1].lower()
+                elif(adjacency_matrix[previous_state_in_sequence][current_state] == 1):
+                    aligned_sequence += current_fragmentary_sequence[current_sequence_index - 1].upper()
+                else:
+                    raise Exception("Illegal transition")
+            elif(current_state != 0 and current_state != len(emission_probabilities) - 1):
                 aligned_sequence += "-"
 
         backtraced_states = backtraced_states[::-1]
@@ -189,7 +265,7 @@ def get_matrices(cumulative_hmm, input_dir, backbone_alignment, fragmentary_sequ
             M[get_index("M", i),get_index("I", i)] = 1 # Mi to Ii
             M[get_index("M", i),get_index("D", i + 1)] = 1 # Mi to Di+1
 
-            M[get_index("I", i),get_index("I", i + 1)] = 1 # Ii to Mi+1
+            M[get_index("I", i),get_index("M", i + 1)] = 1 # Ii to Mi+1
             M[get_index("I", i),get_index("I", i)] = 2 # Ii to Ii
 
             M[get_index("D", i),get_index("M", i + 1)] = 1 # Di to Mi+1
@@ -379,8 +455,8 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
                 for compare_to_hmm_file in current_states_probabilities:
                     current_sum += 2**(float(current_hmm_bitscores[compare_to_hmm_file]) - float(current_hmm_bitscores[current_hmm_file]))
                 hmm_weights[current_hmm_file] = 1 / current_sum
-            # print("hmm weights sum to: " + str(np.sum(hmm_weights)))
-            # print(hmm_weights.values())
+            print("hmm weights sum to: " + str(np.sum(hmm_weights.values())))
+            print(hmm_weights.values())
             npt.assert_almost_equal(sum(hmm_weights.values()), 1)
             output_hmm[backbone_state_index] = {
                 "match": [],
@@ -476,10 +552,13 @@ def get_custom_bitscores(input_dir, backbone_alignment, fragmentary_sequence_fil
             current_input_file = output_prefix + "/" + str(current_hmm_index) + "-hmmbuild.profile"
             with open(output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.out", "w") as stdout_f:
                 with open(output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.err", "w") as stderr_f:
+                    single_fragmentary_sequence_file = output_prefix + "/" + fragmentary_sequence_record.id + ".fasta"
+                    with open(single_fragmentary_sequence_file, "w") as f:
+                        SeqIO.write(fragmentary_sequence_record, f, "fasta")
                     current_search_file = output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.output"
                     current_search_files.append(current_search_file)
-                    subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmsearch", "--noali", "--cpu", "1", "-o", current_search_file, "-E", "99999999999", "--max", current_input_file, fragmentary_sequence_file], stdout=stdout_f, stderr=stderr_f)
-    return get_bitscores_helper(input_dir, current_search_files, backbone_alignment, fragmentary_sequence_file, output_prefix)
+                    subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmsearch", "--noali", "--cpu", "1", "-o", current_search_file, "-E", "99999999999", "--max", current_input_file,single_fragmentary_sequence_file], stdout=stdout_f, stderr=stderr_f)
+    return get_bitscores_helper(input_dir, num_hmms, current_search_files, backbone_alignment, fragmentary_sequence_file, output_prefix)
 
 def get_sepp_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix):
     num_hmms = len(list(glob.glob(input_dir + "/P_*")))
@@ -490,31 +569,34 @@ def get_sepp_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file,
             current_input_file = list(glob.glob(input_dir + "/P_" + str(current_hmm_index) + "/A_" + str(current_hmm_index) + "_0/hmmbuild.model.*"))[0]
             with open(output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.out", "w") as stdout_f:
                 with open(output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.err", "w") as stderr_f:
+                    single_fragmentary_sequence_file = output_prefix + "/" + fragmentary_sequence_record.id + ".fasta"
+                    with open(single_fragmentary_sequence_file, "w") as f:
+                        SeqIO.write(fragmentary_sequence_record, f, "fasta")
                     current_search_file = output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.output"
                     current_search_files.append(current_search_file)
-                    subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmsearch", "--noali", "--cpu", "1", "-o", current_search_file, "-E", "99999999999", "--max", current_input_file, fragmentary_sequence_file], stdout=stdout_f, stderr=stderr_f)
+                    subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmsearch", "--noali", "--cpu", "1", "-o", current_search_file, "-E", "99999999999", "--max", current_input_file,single_fragmentary_sequence_file], stdout=stdout_f, stderr=stderr_f)
 
-    return get_bitscores_helper(input_dir, current_search_files, backbone_alignment, fragmentary_sequence_file, output_prefix)
+    return get_bitscores_helper(input_dir, num_hmms, current_search_files, backbone_alignment, fragmentary_sequence_file, output_prefix)
 
-def get_bitscores_helper(input_dir, current_search_files, backbone_alignment, fragmentary_sequence_file, output_prefix):
+def get_bitscores_helper(input_dir, num_hmms, current_search_files, backbone_alignment, fragmentary_sequence_file, output_prefix):
     hmm_bitscores = {}
 
     for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
         current_fragmentary_sequence = fragmentary_sequence_record.seq
         current_hmm_bitscores = {}
-        for current_hmm_index in range(len(current_search_files)):
+        for current_hmm_index in range(num_hmms):
             current_search_file = output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.output"
             with open(current_search_file, "r") as f:
-                count_from_evalue = 0
-                evalue_encountered = False
+                count_from_sequence_id = 0
+                current_sequence_id_encountered = False
                 for line in f:
-                    if(count_from_evalue == 1):
-                        current_hmm_bitscores[current_hmm_index] = line.split()[1]
+                    if(current_sequence_id_encountered):
+                        count_from_sequence_id += 1
+                    if(count_from_sequence_id == 3):
+                        current_hmm_bitscores[current_hmm_index] = line.split()[2]
                         break
-                    if(evalue_encountered):
-                        count_from_evalue += 1
-                    if("E-value" in line and "score" in line):
-                        evalue_encountered = True
+                    if(">> " + fragmentary_sequence_record.id in line):
+                        current_sequence_id_encountered = True
         hmm_bitscores[fragmentary_sequence_record.id] = current_hmm_bitscores
     return hmm_bitscores
 
