@@ -1,6 +1,7 @@
 import glob
 import math
 import numpy as np
+import numpy.testing as npt
 import os
 import pprint
 import subprocess
@@ -11,47 +12,326 @@ import click
 import pyhmmer
 from pyhmmer.plan7 import HMM,HMMFile
 pp = pprint.PrettyPrinter(indent=4)
+np.set_printoptions(threshold=np.inf)
+
 
 
 @click.command()
 @click.option("--input-dir", required=True, type=click.Path(exists=True), help="The input temp root dir of sepp that contains all the HMMs")
-@click.option("--backbone-alignment", required=True, type=click.Path(exists=True), help="The input backbone alignment to SEPP")
+@click.option("--backbone-alignment", required=True, type=click.Path(exists=True), help="The input backbone alignment")
 @click.option("--fragmentary-sequence-file", required=True, type=click.Path(exists=True), help="The input fragmentary sequence file to SEPP")
 @click.option("--output-prefix", required=True, type=click.Path(), help="Output prefix")
-def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix):
-    mappings = create_mappings(input_dir, backbone_alignment)
-    print("the mappings are")
-    pp.pprint(mappings)
-    bitscores = get_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix)
-    print("bitscores are")
-    pp.pprint(bitscores)
-    output_hmm = get_probabilities(input_dir, backbone_alignment, fragmentary_sequence_file, mappings, bitscores, output_prefix)
-    print("output hmm is")
-    pp.pprint(output_hmm)
+@click.option("--build", required=False, is_flag=True, help="Whether to run hmmbuild. If yes, the input_dir should contain files of the form input_i.fasta")
+def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, build):
+    mappings = None
+    bitscores = None
+    cumulative_hmm = None
 
-    # match_probabilities,insertion_probabilities,transition_probabilities = get_probabilities(input_dir, backbone_alignment, fragmentary_sequence_file, bitscores, output_prefix)
-    # print(mappings)
+    if(build):
+        mappings = create_custom_mappings(input_dir, backbone_alignment)
+        print("the mappings are")
+        pp.pprint(mappings)
+        build_hmm_profiles(input_dir, mappings, output_prefix)
+        bitscores = get_custom_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix)
+        print("bitscores are")
+        pp.pprint(bitscores)
+        cumulative_hmm = get_custom_probabilities(input_dir, backbone_alignment, fragmentary_sequence_file, mappings, bitscores, output_prefix)
+        print("output hmm is")
+        pp.pprint(cumulative_hmm)
+    else:
+        mappings = create_sepp_mappings(input_dir, backbone_alignment)
+        bitscores = get_sepp_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix)
+        cumulative_hmm = get_sepp_probabilities(input_dir, backbone_alignment, fragmentary_sequence_file, mappings, bitscores, output_prefix)
+    adjacency_matrices_dict,emission_probabilities_dict,transition_probabilities_dict,alphabet = get_matrices(cumulative_hmm, input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix)
+    # pp.pprint(adjacency_matrices_dict)
+    # pp.pprint(emission_probabilities_dict)
+    # pp.pprint(transition_probabilities_dict)
+    aligned_sequences_dict = run_viterbi(adjacency_matrices_dict, emission_probabilities_dict, transition_probabilities_dict, alphabet, fragmentary_sequence_file)
+    # aligned_sequences_dict = align_sequences(backtraced_states_dict, fragmentary_sequence_file)
+
+    print("aligned sequences are")
+    pp.pprint(aligned_sequences_dict)
+
+# def aligned_sequences(backtraced_states_dict, fragmentary_sequence_file):
+#     aligned_sequences = {}
+#     for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
+#         current_aligned_sequence = ""
+#         current_fragmentary_sequence = fragmentary_sequence_record.seq
+#         current_fragmentary_sequence_id = fragmentary_sequence_record.id
+#         backtraced_states = backtraced_states_dict[current_fragmentary_sequence_id]
+#         for state_index in backtraced_states:
+#             if(state_index == 0):
+#                 # start state does not emit anything
+#                 pass
+#             elif(state_index == 1):
+#                 # I0 state emits things
+#                 current_aligned_sequence.append(frag)
+#             elif(state_index == num_states - 1):
+#                 # end state does not emit anything
+#                 npt.assert_almost_equal(np.sum(row), 0, decimal=4)
+#             elif(is_match(state_index)):
+#                 npt.assert_almost_equal(np.sum(row), 1, decimal=4)
+#             elif(is_insertion(state_index)):
+#                 npt.assert_almost_equal(np.sum(row), 1, decimal=4)
+#             elif(is_deletion(state_index)):
+#                 npt.assert_almost_equal(np.sum(row), 0, decimal=4)
+
+#         aligned_sequences[current_fragmentary_sequence_id] = current_aligned_sequence
+#     return aligned_sequences
+
+def run_viterbi(adjacency_matrices_dict, emission_probabilities_dict, transition_probabilities_dict, alphabet, fragmentary_sequence_file):
+    backtraced_states_dict = {}
+    aligned_sequences_dict = {}
+    for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
+        backtraced_states = []
+        aligned_sequence = ""
+        current_fragmentary_sequence = fragmentary_sequence_record.seq
+        current_fragmentary_sequence_id = fragmentary_sequence_record.id
+        adjacency_matrix = adjacency_matrices_dict[current_fragmentary_sequence_id]
+        emission_probabilities = emission_probabilities_dict[current_fragmentary_sequence_id]
+        transition_probabilities = transition_probabilities_dict[current_fragmentary_sequence_id]
+        emission_state_mask = emission_probabilities_dict[current_fragmentary_sequence_id]
+        lookup_table = np.zeros((len(current_fragmentary_sequence) + 1, len(emission_probabilities)))
+        backtrace_table = np.empty(lookup_table.shape, dtype=object)
+        lookup_table[0,0] = 1
+        backtrace_table[0,0] = (-1,-1)
+        # [0,j] should be 0 but i'm making everything zero in the initilazation
+        for state_index in range(len(emission_probabilities)):
+            # if(emitted_all_letters):
+            #     break
+            for sequence_index in range(len(current_fragmentary_sequence) + 1):
+                # if(emitted_all_letters):
+                #     break
+                if(state_index == 0 and sequence_index == 0):
+                    # this is already handled by the base case
+                    continue
+                if(np.sum(emission_probabilities[state_index]) > 0):
+                    # it's an emission state
+                    current_emission_probability = emission_probabilities[state_index,alphabet.index(current_fragmentary_sequence[sequence_index - 1])]
+                    if(sequence_index == 0):
+                        # this means emitting an empty sequence which has a zero percent chance
+                        current_emission_probability = 0
+                    max_value = 0
+                    for search_state_index in range(state_index + 1):
+                        current_value = lookup_table[sequence_index - 1,search_state_index] * transition_probabilities[search_state_index,state_index]
+                        if(current_value > max_value):
+                            max_value = current_value
+                            backtrace_table[sequence_index,state_index] = (sequence_index - 1,search_state_index)
+                    lookup_table[sequence_index,state_index] = current_emission_probability * max_value
+                    # if(sequence_index == len(current_fragmentary_sequence) - 1):
+                    #     ending_tuple = (sequence_index,state_index)
+                    #     emitted_all_letters = True
+                else:
+                    # it's not an emission state
+                    max_value = 0
+                    for search_state_index in range(state_index):
+                        current_value = lookup_table[sequence_index,search_state_index] * transition_probabilities[search_state_index,state_index]
+                        if(current_value > max_value):
+                            max_value = current_value
+                            backtrace_table[sequence_index,state_index] = (sequence_index,search_state_index)
+                    lookup_table[sequence_index,state_index] = max_value
+
+        readable_table = np.around(lookup_table, decimals=1)
+        for state_index in range(len(emission_probabilities)):
+            pp.pprint(readable_table[:,state_index])
+            pp.pprint(transition_probabilities[state_index,:])
+        pp.pprint(backtrace_table)
+
+        current_position = (len(current_fragmentary_sequence),len(emission_probabilities) - 1)
+        while(current_position != (-1,-1)):
+            pp.pprint(current_position)
+            current_sequence_index = current_position[0]
+            current_state = current_position[1]
+            backtraced_states.append(current_state)
+            current_position = backtrace_table[current_position]
+            if(np.sum(emission_probabilities[current_state]) > 0):
+                aligned_sequence += current_fragmentary_sequence[current_sequence_index - 1]
+            else:
+                aligned_sequence += "-"
+
+        backtraced_states = backtraced_states[::-1]
+        aligned_sequence = aligned_sequence[::-1]
+        # pp.pprint(backtraced_states)
+        # pp.pprint(aligned_sequence)
+        backtraced_states_dict[current_fragmentary_sequence_id] = backtraced_states
+        aligned_sequences_dict[current_fragmentary_sequence_id] = aligned_sequence
+    return aligned_sequences_dict
 
 
-def get_probabilities(input_dir, backbone_alignment, fragmentary_sequence_file, mappings, bitscores, output_prefix):
+def get_matrices(cumulative_hmm, input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix):
+    alphabet = ["A", "C", "G", "T"]
     backbone_records = SeqIO.to_dict(SeqIO.parse(backbone_alignment, "fasta"))
-    total_nodes = None
+    total_columns = None
     for record in backbone_records:
-        total_nodes = len(backbone_records[record].seq)
+        total_columns = len(backbone_records[record].seq)
         break
-    num_hmms = len(list(glob.glob(input_dir + "/P_*")))
+    num_states = (3 * total_columns) + 2 + 1
+    num_characters = 4
+    M_dict = {}
+    T_dict = {}
+    P_dict = {}
 
-    backbone_probabilities = {
-        "match": [],
-        "insertion": [],
-        "transition": {
-            "destination_state": ["m->m", "m->i", "m->d", "i->m", "i->i", "d->m", "d->d"],
-        },
-    }
+    for fragmentary_sequence_id in cumulative_hmm:
+        output_hmm = cumulative_hmm[fragmentary_sequence_id]
 
+        M = np.zeros((num_states, num_states)) # HMM adjacency matrix
+        T = np.zeros(M.shape) # transition probability table
+        P = np.zeros((num_states, num_characters)) # emission probability table
+        current_emission_state_mask = np.zeros(num_states)
+
+        M[0,1] = 1 # edge from start state to I0
+        M[0,2] = 1 # edge from start state to M1
+        # start state doesn't connect to I1
+        M[0,4] = 1 # edge from start state to D1
+
+        for i in range(1, total_columns):
+            M[get_index("M", i),get_index("M", i + 1)] = 1 # Mi to Mi+1
+            M[get_index("M", i),get_index("I", i)] = 1 # Mi to Ii
+            M[get_index("M", i),get_index("D", i + 1)] = 1 # Mi to Di+1
+
+            M[get_index("I", i),get_index("I", i + 1)] = 1 # Ii to Mi+1
+            M[get_index("I", i),get_index("I", i)] = 2 # Ii to Ii
+
+            M[get_index("D", i),get_index("M", i + 1)] = 1 # Di to Mi+1
+            M[get_index("D", i),get_index("D", i + 1)] = 1 # Di to Di+1
+
+        M[get_index("M", total_columns), num_states - 1] = 1 # Last match state to end state
+        M[get_index("M", total_columns),get_index("I", total_columns)] = 1 # Last match state to last insertion state
+
+        M[get_index("I", total_columns), get_index("I", total_columns)] = 2 # Last insertion state to last insertion state
+        M[get_index("I", total_columns), num_states - 1] = 1 # Last insertion state to end state
+
+        M[get_index("D", total_columns), num_states - 1] = 1 # Last deletion state to end state
+
+        for current_column in output_hmm:
+            # if(current_column == 0):
+                # continue
+            for letter_index,letter in enumerate(alphabet):
+                # print(current_column)
+                # print(total_columns)
+                if(current_column == total_columns + 1):
+                    # this is the end state which has no emission probabilities or transitions going out
+                    # print("breaking")
+                    break
+                if(current_column != 0):
+                    P[get_index("M", current_column), letter_index] = output_hmm[current_column]["match"][letter_index]
+                P[get_index("I", current_column), letter_index] = output_hmm[current_column]["insertion"][letter_index]
+                for current_transition_destination_state in output_hmm[current_column]["transition"]:
+                    current_transition_probabilities = output_hmm[current_column]["transition"][current_transition_destination_state]
+                    # these transitions are always valid
+                    T[get_index("M", current_column),get_index("M", current_transition_destination_state)] = current_transition_probabilities[0] # Mi to Mi+1
+                    T[get_index("M", current_column),get_index("I", current_column)] = current_transition_probabilities[1]# Mi to Ii
+                    T[get_index("I", current_column),get_index("M", current_transition_destination_state)] = current_transition_probabilities[3] # Ii to Mi+1
+                    T[get_index("I", current_column),get_index("I", current_column)] = current_transition_probabilities[4] # Ii to Ii
+
+                    # this transition isn't valid on the 0th column(the column before the first column)  since D0 doesn't exist
+                    if(current_column != 0):
+                        T[get_index("D", current_column),get_index("M", current_transition_destination_state)] = current_transition_probabilities[5] # Di to Mi+1
+                    # this transition is only valid if it's not going to the end state. End state is techincially a match state in this scheme
+                    if(current_transition_destination_state != total_columns + 1):
+                        T[get_index("M", current_column),get_index("D", current_transition_destination_state)] = current_transition_probabilities[2] # Mi to Di+1
+                        if(current_column != 0):
+                            T[get_index("D", current_column),get_index("D", current_transition_destination_state)] = current_transition_probabilities[6] # Di to Di+1
+
+        # print(T)
+        # print(M)
+        # print(P)
+        for row_index,row in enumerate(P):
+            # print(row_index)
+            # print(row)
+            if(row_index == 0):
+                # start state does not emit anything
+                npt.assert_almost_equal(np.sum(row), 0, decimal=4)
+            elif(row_index == 1):
+                # I0 state emits things
+                npt.assert_almost_equal(np.sum(row), 1, decimal=4)
+            elif(row_index == num_states - 1):
+                # end state does not emit anything
+                npt.assert_almost_equal(np.sum(row), 0, decimal=4)
+            elif(is_match(row_index)):
+                npt.assert_almost_equal(np.sum(row), 1, decimal=4)
+            elif(is_insertion(row_index)):
+                npt.assert_almost_equal(np.sum(row), 1, decimal=4)
+            elif(is_deletion(row_index)):
+                npt.assert_almost_equal(np.sum(row), 0, decimal=4)
+
+        for row_index,row in enumerate(T[:num_states - 1,:]):
+            # print(row_index)
+            # print(row)
+            npt.assert_almost_equal(np.sum(row), 1, decimal=4)
+
+        M_dict[fragmentary_sequence_id] = M
+        P_dict[fragmentary_sequence_id] = P
+        T_dict[fragmentary_sequence_id] = T
+
+    return M_dict,P_dict,T_dict,alphabet
+
+def is_match(state_index):
+    return (state_index - 2) % 3 == 0
+
+def is_insertion(state_index):
+    return (state_index - 2) % 3 == 1
+
+def is_deletion(state_index):
+    return (state_index - 2) % 3 == 2
+
+def get_index(state_type, column_index):
+    if(column_index == 0):
+        if(state_type == "M"):
+            return 0
+        elif(state_type == "I"):
+            return 1
+        elif(state_type == "D"):
+            raise Exception("State D0 dooesn't exist")
+
+    if(state_type == "M"):
+        return 2 + (3 * (int(column_index) - 1))
+    elif(state_type == "I"):
+        return 2 + (3 * (int(column_index) - 1)) + 1
+    elif(state_type == "D"):
+        return 2 + (3 * (int(column_index) - 1)) + 2
+    else:
+        raise Exception(str(state_type) + " is not a valid type")
+
+
+def build_hmm_profiles(input_dir, mappings, output_prefix):
+    num_hmms = len(mappings)
+    for current_hmm_index in range(num_hmms):
+        with open(output_prefix + "/" + str(current_hmm_index) + "-hmmbuild.out", "w") as stdout_f:
+            with open(output_prefix + "/" + str(current_hmm_index) + "-hmmbuild.err", "w") as stderr_f:
+                current_input_file = input_dir + "/input_" + str(current_hmm_index) + ".fasta"
+                current_output_file = output_prefix + "/" + str(current_hmm_index) + "-hmmbuild.profile"
+                subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmbuild", "--cpu", "1", "--dna", "--ere", "0.59", "--symfrac", "0.0", "--informat", "afa", current_output_file, current_input_file], stdout=stdout_f, stderr=stderr_f)
+
+def get_custom_probabilities(input_dir, backbone_alignment, fragmentary_sequence_file, mappings, bitscores, output_prefix):
+    backbone_records = SeqIO.to_dict(SeqIO.parse(backbone_alignment, "fasta"))
+    total_columns = None
+    for record in backbone_records:
+        total_columns = len(backbone_records[record].seq)
+        break
+    num_hmms = len(mappings)
     hmms = {}
-    output_hmm = {}
-    transition_origins = {}
+
+
+    for current_hmm_index in range(num_hmms):
+        current_input_file = output_prefix + "/" + str(current_hmm_index) + "-hmmbuild.profile"
+        current_hmm = None
+        with HMMFile(current_input_file) as hmm_f:
+            current_hmm = next(hmm_f)
+
+        match_probabilities = np.asarray(current_hmm.mat)
+        insertion_probabilities = np.asarray(current_hmm.ins)
+        transition_probabilities = np.asarray(current_hmm.trans)
+        hmms[current_hmm_index] = {
+            "match": match_probabilities,
+            "insertion": insertion_probabilities,
+            "transition": transition_probabilities,
+        }
+    return get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_file, mappings, bitscores, output_prefix)
+
+def get_sepp_probabilities(input_dir, backbone_alignment, fragmentary_sequence_file, mappings, bitscores, output_prefix):
+    num_hmms = len(mappings)
+    hmms = {}
 
     for current_hmm_index in range(num_hmms):
         for current_input_file in glob.glob(input_dir + "/P_" + str(current_hmm_index) + "/A_" + str(current_hmm_index) + "_0/hmmbuild.model.*"):
@@ -67,13 +347,24 @@ def get_probabilities(input_dir, backbone_alignment, fragmentary_sequence_file, 
                 "insertion": insertion_probabilities,
                 "transition": transition_probabilities,
             }
-    # print(mappings[0])
-    print("the input hmms are")
-    pp.pprint(hmms)
+    return get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_file, mappings, bitscores, output_prefix)
+
+def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_file, mappings, bitscores, output_prefix):
+    # print("the input hmms are")
+    # pp.pprint(hmms)
+
+    backbone_records = SeqIO.to_dict(SeqIO.parse(backbone_alignment, "fasta"))
+    total_columns = None
+    for record in backbone_records:
+        total_columns = len(backbone_records[record].seq)
+        break
+
+    cumulative_hmm = {}
     for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
+        output_hmm = {}
         current_fragmentary_sequence = fragmentary_sequence_record.seq
         current_hmm_bitscores = bitscores[fragmentary_sequence_record.id]
-        for backbone_state_index in range(total_nodes + 1):
+        for backbone_state_index in range(total_columns + 1):
             current_states_probabilities = {}
             hmm_weights = {}
             for current_hmm_index,current_hmm in hmms.items():
@@ -88,8 +379,9 @@ def get_probabilities(input_dir, backbone_alignment, fragmentary_sequence_file, 
                 for compare_to_hmm_file in current_states_probabilities:
                     current_sum += 2**(float(current_hmm_bitscores[compare_to_hmm_file]) - float(current_hmm_bitscores[current_hmm_file]))
                 hmm_weights[current_hmm_file] = 1 / current_sum
-
-            # print(hmm_weights)
+            # print("hmm weights sum to: " + str(np.sum(hmm_weights)))
+            # print(hmm_weights.values())
+            npt.assert_almost_equal(sum(hmm_weights.values()), 1)
             output_hmm[backbone_state_index] = {
                 "match": [],
                 "insertion": [],
@@ -112,9 +404,12 @@ def get_probabilities(input_dir, backbone_alignment, fragmentary_sequence_file, 
                     else:
                         output_hmm[backbone_state_index]["insertion"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["insertion"][current_state_in_hmm]
 
-                    output_hmm[backbone_state_index]["transition"][corresponding_next_backbone_state] = hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm]
+                    if(corresponding_next_backbone_state not in output_hmm[backbone_state_index]["transition"]):
+                        output_hmm[backbone_state_index]["transition"][corresponding_next_backbone_state] = hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm]
+                    else:
+                        output_hmm[backbone_state_index]["transition"][corresponding_next_backbone_state] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm]
                     # print(str(backbone_state_index) + " to " + str(corresponding_next_backbone_state))
-            elif(backbone_state_index == total_nodes):
+            elif(backbone_state_index == total_columns):
                 # this is the end state
                 for current_hmm_file in hmm_weights:
                     if(backbone_state_index not in mappings[current_hmm_file]):
@@ -131,7 +426,10 @@ def get_probabilities(input_dir, backbone_alignment, fragmentary_sequence_file, 
                         output_hmm[backbone_state_index]["insertion"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["insertion"][current_state_in_hmm]
 
                     # print(current_states_probabilities[current_hmm_file]["transition"])
-                    output_hmm[backbone_state_index]["transition"]["END from file " + str(current_hmm_file)] = hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm]
+                    if(total_columns + 1 not in output_hmm[backbone_state_index]["transition"]):
+                        output_hmm[backbone_state_index]["transition"][total_columns + 1] = hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm]
+                    else:
+                        output_hmm[backbone_state_index]["transition"][total_columns + 1] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm]
 
                     # print(str(backbone_state_index) + " to " + str(corresponding_next_backbone_state))
             else:
@@ -159,36 +457,52 @@ def get_probabilities(input_dir, backbone_alignment, fragmentary_sequence_file, 
                     else:
                         output_hmm[backbone_state_index]["insertion"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["insertion"][current_state_in_hmm]
 
-                    output_hmm[backbone_state_index]["transition"][corresponding_next_backbone_state] = hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm]
+                    if(corresponding_next_backbone_state not in output_hmm[backbone_state_index]["transition"]):
+                        output_hmm[backbone_state_index]["transition"][corresponding_next_backbone_state] = hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm]
+                    else:
+                        output_hmm[backbone_state_index]["transition"][corresponding_next_backbone_state] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm]
                     # print(str(backbone_state_index) + " to " + str(corresponding_next_backbone_state))
                     # print(-np.log(current_states_probabilities[current_hmm_file]["transition"][1]))
             # print(-np.log(output_hmm[0][]["transition"]))
-    return output_hmm
+        cumulative_hmm[fragmentary_sequence_record.id] = output_hmm
+    return cumulative_hmm
 
-
-def get_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix):
-    # DEBUG
-    return {
-        "x": {
-            0: 1.1,
-            1: 1.1,
-        }
-    }
-    hmm_bitscores = {}
-    num_hmms = len(list(glob.glob(input_dir + "/P_*")))
+def get_custom_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix):
+    num_hmms = len(list(glob.glob(input_dir + "/input_*.fasta")))
+    current_search_files = []
     for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
         current_fragmentary_sequence = fragmentary_sequence_record.seq
         for current_hmm_index in range(num_hmms):
-            for current_input_file in glob.glob(input_dir + "/P_" + str(current_hmm_index) + "/A_" + str(current_hmm_index) + "_0/hmmbuild.model.*"):
-                with open(output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.out", "w") as stdout_f:
-                    with open(output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.err", "w") as stderr_f:
-                        subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmsearch", "--noali", "--cpu", "1", "-o", output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.output", "-E", "99999999999", "--max", current_input_file, fragmentary_sequence_file], stdout=stdout_f, stderr=stderr_f)
-                        # subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmsearch", "--noali", "--cpu", "1", "-o", output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.output", "-T", "-100000000", "--max", current_input_file, fragmentary_sequence_file], stdout=stdout_f, stderr=stderr_f)
+            current_input_file = output_prefix + "/" + str(current_hmm_index) + "-hmmbuild.profile"
+            with open(output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.out", "w") as stdout_f:
+                with open(output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.err", "w") as stderr_f:
+                    current_search_file = output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.output"
+                    current_search_files.append(current_search_file)
+                    subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmsearch", "--noali", "--cpu", "1", "-o", current_search_file, "-E", "99999999999", "--max", current_input_file, fragmentary_sequence_file], stdout=stdout_f, stderr=stderr_f)
+    return get_bitscores_helper(input_dir, current_search_files, backbone_alignment, fragmentary_sequence_file, output_prefix)
+
+def get_sepp_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix):
+    num_hmms = len(list(glob.glob(input_dir + "/P_*")))
+    current_search_files = []
+    for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
+        current_fragmentary_sequence = fragmentary_sequence_record.seq
+        for current_hmm_index in range(num_hmms):
+            current_input_file = list(glob.glob(input_dir + "/P_" + str(current_hmm_index) + "/A_" + str(current_hmm_index) + "_0/hmmbuild.model.*"))[0]
+            with open(output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.out", "w") as stdout_f:
+                with open(output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.err", "w") as stderr_f:
+                    current_search_file = output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.output"
+                    current_search_files.append(current_search_file)
+                    subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmsearch", "--noali", "--cpu", "1", "-o", current_search_file, "-E", "99999999999", "--max", current_input_file, fragmentary_sequence_file], stdout=stdout_f, stderr=stderr_f)
+
+    return get_bitscores_helper(input_dir, current_search_files, backbone_alignment, fragmentary_sequence_file, output_prefix)
+
+def get_bitscores_helper(input_dir, current_search_files, backbone_alignment, fragmentary_sequence_file, output_prefix):
+    hmm_bitscores = {}
 
     for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
         current_fragmentary_sequence = fragmentary_sequence_record.seq
         current_hmm_bitscores = {}
-        for current_hmm_index in range(num_hmms):
+        for current_hmm_index in range(len(current_search_files)):
             current_search_file = output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.output"
             with open(current_search_file, "r") as f:
                 count_from_evalue = 0
@@ -204,23 +518,29 @@ def get_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, outp
         hmm_bitscores[fragmentary_sequence_record.id] = current_hmm_bitscores
     return hmm_bitscores
 
+def create_custom_mappings(input_dir, backbone_alignment):
+    num_hmms = len(list(glob.glob(input_dir + "/input_*.fasta")))
+    input_fasta_filenames = []
+    for current_hmm_index in range(num_hmms):
+        current_input_file = input_dir + "/input_" + str(current_hmm_index) + ".fasta"
+        input_fasta_filenames.append(current_input_file)
+    return create_mappings_helper(input_fasta_filenames, backbone_alignment)
 
-
-def create_mappings(input_dir, backbone_alignment, output_prefix):
+def create_sepp_mappings(input_dir, backbone_alignment):
     num_hmms = len(list(glob.glob(input_dir + "/P_*")))
     input_fasta_filenames = []
     for current_hmm_index in range(num_hmms):
-        for current_input_file in glob.glob(input_dir + "/P_" + str(current_hmm_index) + "/A_" + str(current_hmm_index) + "_0/hmmbuild.input.*.fasta"):
-            input_fasta_filenames.append(current_input_file)
+        current_input_file = list(glob.glob(input_dir + "/P_" + str(current_hmm_index) + "/A_" + str(current_hmm_index) + "_0/hmmbuild.input.*.fasta"))[0]
+        input_fasta_filenames.append(current_input_file)
     return create_mappings_helper(input_fasta_filenames, backbone_alignment)
 
 def create_mappings_helper(input_fasta_filenames, backbone_alignment):
     num_hmms = len(input_fasta_filenames)
     hmm_weights = {}
     backbone_records = SeqIO.to_dict(SeqIO.parse(backbone_alignment, "fasta"))
-    total_nodes = None
+    total_columns = None
     for record in backbone_records:
-        total_nodes = len(backbone_records[record].seq)
+        total_columns = len(backbone_records[record].seq)
         break
 
     match_state_mappings = {} # from hmm_index to {map of backbone match state index to current input hmm build fasta's match state index}
@@ -253,7 +573,6 @@ def create_mappings_helper(input_fasta_filenames, backbone_alignment):
                 if key_so_far in current_mapping:
                     assert cumulative_mapping[key_so_far] == current_mapping[key_so_far]
             cumulative_mapping.update(current_mapping)
-        # pp.pprint(match_state_mappings)
         assert current_hmm_index not in match_state_mappings
         match_state_mappings[current_hmm_index] = cumulative_mapping
 
