@@ -452,9 +452,22 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
             current_hmm_bitscores = bitscores[fragmentary_sequence_record.id]
             for current_hmm_file in current_states_probabilities:
                 current_sum = 0.0
-                for compare_to_hmm_file in current_states_probabilities:
-                    current_sum += 2**(float(current_hmm_bitscores[compare_to_hmm_file]) - float(current_hmm_bitscores[current_hmm_file]))
-                hmm_weights[current_hmm_file] = 1 / current_sum
+                if(current_hmm_file in current_hmm_bitscores):
+                    for compare_to_hmm_file in current_states_probabilities:
+                        if(compare_to_hmm_file in current_hmm_bitscores):
+                            current_sum += 2**(float(current_hmm_bitscores[compare_to_hmm_file]) - float(current_hmm_bitscores[current_hmm_file]))
+                    hmm_weights[current_hmm_file] = 1 / current_sum
+                else:
+                    hmm_weights[current_hmm_file] = 0
+
+            is_hmm_weights_all_zero = True
+            for hmm_weight_index in hmm_weights:
+                if(hmm_weights[hmm_weight_index] != 0):
+                    is_hmm_weights_all_zero = False
+            if(is_hmm_weights_all_zero):
+                for hmm_weight_index in hmm_weights:
+                    hmm_weights[hmm_weight_index] = 1 / (len(hmm_weights))
+
             print("hmm weights sum to: " + str(np.sum(hmm_weights.values())))
             print(hmm_weights.values())
             npt.assert_almost_equal(sum(hmm_weights.values()), 1)
@@ -545,51 +558,39 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
 
 def get_custom_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix):
     num_hmms = len(list(glob.glob(input_dir + "/input_*.fasta")))
-    current_search_files = []
-    for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
-        current_fragmentary_sequence = fragmentary_sequence_record.seq
-        for current_hmm_index in range(num_hmms):
-            current_input_file = output_prefix + "/" + str(current_hmm_index) + "-hmmbuild.profile"
-            with open(output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.out", "w") as stdout_f:
-                with open(output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.err", "w") as stderr_f:
-                    single_fragmentary_sequence_file = output_prefix + "/" + fragmentary_sequence_record.id + ".fasta"
-                    with open(single_fragmentary_sequence_file, "w") as f:
-                        SeqIO.write(fragmentary_sequence_record, f, "fasta")
-                    current_search_file = output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.output"
-                    current_search_files.append(current_search_file)
-                    subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmsearch", "--noali", "--cpu", "1", "-o", current_search_file, "-E", "99999999999", "--max", current_input_file,single_fragmentary_sequence_file], stdout=stdout_f, stderr=stderr_f)
-    return get_bitscores_helper(input_dir, num_hmms, current_search_files, backbone_alignment, fragmentary_sequence_file, output_prefix)
+    for current_hmm_index in range(num_hmms):
+        current_input_file = output_prefix + "/" + str(current_hmm_index) + "-hmmbuild.profile"
+        with open(output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.out", "w") as stdout_f:
+            with open(output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.err", "w") as stderr_f:
+                current_search_file = output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.output"
+                subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmsearch", "--noali", "--cpu", "1", "-o", current_search_file, "-E", "99999999999", "--max", current_input_file,fragmentary_sequence_file], stdout=stdout_f, stderr=stderr_f)
+    return get_bitscores_helper(input_dir, num_hmms, backbone_alignment, fragmentary_sequence_file, output_prefix)
 
 def get_sepp_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix):
     num_hmms = len(list(glob.glob(input_dir + "/P_*")))
-    current_search_files = []
-    for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
-        current_fragmentary_sequence = fragmentary_sequence_record.seq
-        for current_hmm_index in range(num_hmms):
-            current_input_file = list(glob.glob(input_dir + "/P_" + str(current_hmm_index) + "/A_" + str(current_hmm_index) + "_0/hmmbuild.model.*"))[0]
-            with open(output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.out", "w") as stdout_f:
-                with open(output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.err", "w") as stderr_f:
-                    single_fragmentary_sequence_file = output_prefix + "/" + fragmentary_sequence_record.id + ".fasta"
-                    with open(single_fragmentary_sequence_file, "w") as f:
-                        SeqIO.write(fragmentary_sequence_record, f, "fasta")
-                    current_search_file = output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.output"
-                    current_search_files.append(current_search_file)
-                    subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmsearch", "--noali", "--cpu", "1", "-o", current_search_file, "-E", "99999999999", "--max", current_input_file,single_fragmentary_sequence_file], stdout=stdout_f, stderr=stderr_f)
+    for current_hmm_index in range(num_hmms):
+        current_input_file = list(glob.glob(input_dir + "/P_" + str(current_hmm_index) + "/A_" + str(current_hmm_index) + "_0/hmmbuild.model.*"))[0]
+        with open(output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.out", "w") as stdout_f:
+            with open(output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.err", "w") as stderr_f:
+                current_search_file = output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.output"
+                subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmsearch", "--noali", "--cpu", "1", "-o", current_search_file, "-E", "99999999999", "--max", current_input_file, fragmentary_sequence_file], stdout=stdout_f, stderr=stderr_f)
 
-    return get_bitscores_helper(input_dir, num_hmms, current_search_files, backbone_alignment, fragmentary_sequence_file, output_prefix)
+    return get_bitscores_helper(input_dir, num_hmms, backbone_alignment, fragmentary_sequence_file, output_prefix)
 
-def get_bitscores_helper(input_dir, num_hmms, current_search_files, backbone_alignment, fragmentary_sequence_file, output_prefix):
+def get_bitscores_helper(input_dir, num_hmms, backbone_alignment, fragmentary_sequence_file, output_prefix):
     hmm_bitscores = {}
 
     for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
         current_fragmentary_sequence = fragmentary_sequence_record.seq
         current_hmm_bitscores = {}
         for current_hmm_index in range(num_hmms):
-            current_search_file = output_prefix + "/" + str(current_hmm_index) + "-" + fragmentary_sequence_record.id + "-hmmsearch.output"
+            current_search_file = output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.output"
             with open(current_search_file, "r") as f:
                 count_from_sequence_id = 0
                 current_sequence_id_encountered = False
                 for line in f:
+                    if("No") in line:
+                        break
                     if(current_sequence_id_encountered):
                         count_from_sequence_id += 1
                     if(count_from_sequence_id == 3):
