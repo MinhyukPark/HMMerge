@@ -125,9 +125,9 @@ def test_identical_backbone_3_subsets():
     test_root = "./test/mapping_test/identical_3_subsets_0/"
     mapping = main.create_mappings_helper(*setup_mapping_inputs(test_root, 3))
     assert mapping == {
-        0: {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9},
-        1: {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9},
-        2: {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9},
+        0: {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10},
+        1: {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10},
+        2: {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10},
     }
 
 def test_identical_backbone_2_subsets():
@@ -137,8 +137,8 @@ def test_identical_backbone_2_subsets():
     test_root = "./test/mapping_test/identical_2_subsets_0/"
     mapping = main.create_mappings_helper(*setup_mapping_inputs(test_root, 2))
     assert mapping == {
-        0: {0: 0, 1: 1, 2: 2, 3: 3, 4: 4},
-        1: {0: 0, 1: 1, 2: 2, 3: 3, 4: 4},
+        0: {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5},
+        1: {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5},
     }
 
 def test_middle_missing_3_subsets():
@@ -147,9 +147,9 @@ def test_middle_missing_3_subsets():
     test_root = "./test/mapping_test/middle_missing_3_subsets_0/"
     mapping = main.create_mappings_helper(*setup_mapping_inputs(test_root, 3))
     assert mapping == {
-        0: {0: 0, 1: 1, 2: 2, 3: 3, 7: 4, 8: 5, 9: 6},
-        1: {0: 0, 1: 1, 2: 2, 3: 3, 7: 4, 8: 5, 9: 6},
-        2: {0: 0, 1: 1, 2: 2, 3: 3, 7: 4, 8: 5, 9: 6},
+        0: {0: 0, 1: 1, 2: 2, 3: 3, 7: 4, 8: 5, 9: 6, 10: 7},
+        1: {0: 0, 1: 1, 2: 2, 3: 3, 7: 4, 8: 5, 9: 6, 10: 7},
+        2: {0: 0, 1: 1, 2: 2, 3: 3, 7: 4, 8: 5, 9: 6, 10: 7},
     }
 
 def test_front_missing_2_subsets():
@@ -158,8 +158,8 @@ def test_front_missing_2_subsets():
     test_root = "./test/mapping_test/front_missing_2_subsets_0/"
     mapping = main.create_mappings_helper(*setup_mapping_inputs(test_root, 2))
     assert mapping == {
-        0: {0: 0, 4: 1, 5: 2, 6: 3, 7: 4, 8: 5, 9: 6},
-        1: {0: 0, 4: 1, 5: 2, 6: 3, 7: 4, 8: 5, 9: 6},
+        0: {0: 0, 4: 1, 5: 2, 6: 3, 7: 4, 8: 5, 9: 6, 10: 7},
+        1: {0: 0, 4: 1, 5: 2, 6: 3, 7: 4, 8: 5, 9: 6, 10: 7},
     }
 
 def test_end_missing_2_subsets():
@@ -168,8 +168,8 @@ def test_end_missing_2_subsets():
     test_root = "./test/mapping_test/end_missing_2_subsets_0/"
     mapping = main.create_mappings_helper(*setup_mapping_inputs(test_root, 2))
     assert mapping == {
-        0: {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6},
-        1: {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6},
+        0: {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 10: 7},
+        1: {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 10: 7},
     }
 
 
@@ -181,8 +181,8 @@ def test_front_middle_end_missing_3_subsets():
     test_root = "./test/mapping_test/front_middle_end_missing_3_subsets_0/"
     mapping = main.create_mappings_helper(*setup_mapping_inputs(test_root, 3))
     assert mapping == {
-        0: {0: 0, 4: 1, 5: 2, 6: 3, 7: 4, 8: 5, 9: 6},
-        1: {0: 0, 1: 1, 2: 2, 3: 3, 7: 4, 8: 5, 9: 6},
-        2: {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6},
+        0: {0: 0, 4: 1, 5: 2, 6: 3, 7: 4, 8: 5, 9: 6, 10: 7},
+        1: {0: 0, 1: 1, 2: 2, 3: 3, 7: 4, 8: 5, 9: 6, 10: 7},
+        2: {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 10: 7},
     }
 
