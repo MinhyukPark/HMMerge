@@ -304,7 +304,7 @@ def get_matrices(cumulative_hmm, input_dir, backbone_alignment, fragmentary_sequ
         M[get_index("D", total_columns), num_states - 1] = 1 # Last deletion state to end state
 
         for current_column in output_hmm:
-            print("current column: " + str(current_column))
+            # print("current column: " + str(current_column))
             # if(current_column == 0):
                 # continue
             for letter_index,letter in enumerate(alphabet):
@@ -317,22 +317,23 @@ def get_matrices(cumulative_hmm, input_dir, backbone_alignment, fragmentary_sequ
                 if(current_column != 0):
                     P[get_index("M", current_column), letter_index] = output_hmm[current_column]["match"][letter_index]
                 P[get_index("I", current_column), letter_index] = output_hmm[current_column]["insertion"][letter_index]
-                for current_transition_destination_state in output_hmm[current_column]["transition"]:
-                    current_transition_probabilities = output_hmm[current_column]["transition"][current_transition_destination_state]
-                    # these transitions are always valid
-                    T[get_index("M", current_column),get_index("M", current_transition_destination_state)] = current_transition_probabilities[0] # Mi to Mi+1
-                    T[get_index("M", current_column),get_index("I", current_column)] = current_transition_probabilities[1]# Mi to Ii
-                    T[get_index("I", current_column),get_index("M", current_transition_destination_state)] = current_transition_probabilities[3] # Ii to Mi+1
-                    T[get_index("I", current_column),get_index("I", current_column)] = current_transition_probabilities[4] # Ii to Ii
+                # DEBUG: this is the problem
+            T[get_index("I", current_column),get_index("I", current_column)] = output_hmm[current_column]["insert_loop"] # Ii to Ii
+            T[get_index("M", current_column),get_index("I", current_column)] = output_hmm[current_column]["self_match_to_insert"]# Mi to Ii
+            for current_transition_destination_column in output_hmm[current_column]["transition"]:
+                current_transition_probabilities = output_hmm[current_column]["transition"][current_transition_destination_column]
+                # these transitions are always valid
+                T[get_index("M", current_column),get_index("M", current_transition_destination_column)] = current_transition_probabilities[0] # Mi to Mi+1
+                T[get_index("I", current_column),get_index("M", current_transition_destination_column)] = current_transition_probabilities[3] # Ii to Mi+1
 
-                    # this transition isn't valid on the 0th column(the column before the first column)  since D0 doesn't exist
+                # this transition isn't valid on the 0th column(the column before the first column)  since D0 doesn't exist
+                if(current_column != 0):
+                    T[get_index("D", current_column),get_index("M", current_transition_destination_column)] = current_transition_probabilities[5] # Di to Mi+1
+                # this transition is only valid if it's not going to the end state. End state is techincially a match state in this scheme
+                if(current_transition_destination_column != total_columns + 1):
+                    T[get_index("M", current_column),get_index("D", current_transition_destination_column)] = current_transition_probabilities[2] # Mi to Di+1
                     if(current_column != 0):
-                        T[get_index("D", current_column),get_index("M", current_transition_destination_state)] = current_transition_probabilities[5] # Di to Mi+1
-                    # this transition is only valid if it's not going to the end state. End state is techincially a match state in this scheme
-                    if(current_transition_destination_state != total_columns + 1):
-                        T[get_index("M", current_column),get_index("D", current_transition_destination_state)] = current_transition_probabilities[2] # Mi to Di+1
-                        if(current_column != 0):
-                            T[get_index("D", current_column),get_index("D", current_transition_destination_state)] = current_transition_probabilities[6] # Di to Di+1
+                        T[get_index("D", current_column),get_index("D", current_transition_destination_column)] = current_transition_probabilities[6] # Di to Di+1
 
         # print(T)
         # print(M)
@@ -357,7 +358,7 @@ def get_matrices(cumulative_hmm, input_dir, backbone_alignment, fragmentary_sequ
                 npt.assert_almost_equal(np.sum(row), 0, decimal=2)
 
         for row_index,row in enumerate(T[:num_states-1,:]):
-            # print(row_index)
+            # print("rowindex: " + str(row_index))
             # print(row)
             npt.assert_almost_equal(np.sum(row), 1, decimal=2)
 
@@ -473,6 +474,8 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
             output_hmm[backbone_state_index] = {
                 "match": [],
                 "insertion": [],
+                "insert_loop": 0,
+                "self_match_to_insert": 0,
                 "transition": {
                 },
             }
@@ -483,7 +486,9 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
                 current_hmm_mapping = mappings[current_hmm_index]
                 if(backbone_state_index in current_hmm_mapping):
                     current_states_probabilities[current_hmm_index] = current_hmm
-            # print("In state " + str(backbone_state_index) + ", there are " + str(len(current_states_probabilities)) + " hmms that have a match state")
+            # if(backbone_state_index == 2566):
+                # print("In state " + str(backbone_state_index) + ", there are " + str(len(current_states_probabilities)) + " hmms that have a match state")
+                # pp.pprint(current_states_probabilities.keys())
 
             current_hmm_bitscores = bitscores[fragmentary_sequence_record.id]
             for current_hmm_file in current_states_probabilities:
@@ -509,7 +514,7 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
                 # this is the begin state
                 for current_hmm_file in hmm_weights:
                     if(backbone_state_index not in mappings[current_hmm_file]):
-                        continue
+                        raise Exception("Every mapping should have the state 0, the begin state")
                     current_state_in_hmm = mappings[current_hmm_file][backbone_state_index]
                     next_state_in_hmm = current_state_in_hmm + 1
                     corresponding_next_backbone_state = None
@@ -525,9 +530,11 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
                         output_hmm[backbone_state_index]["transition"][corresponding_next_backbone_state] = hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm]
                     else:
                         output_hmm[backbone_state_index]["transition"][corresponding_next_backbone_state] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm]
+                    output_hmm[backbone_state_index]["insert_loop"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm][4]
+                    output_hmm[backbone_state_index]["self_match_to_insert"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm][1]
                     # print(str(backbone_state_index) + " to " + str(corresponding_next_backbone_state))
             elif(backbone_state_index == total_columns):
-                # this is has a transition to the end state and is the last full column of states
+                # this has a transition to the end state and is the last full column of states
                 for current_hmm_file in hmm_weights:
                     if(backbone_state_index not in mappings[current_hmm_file]):
                         continue
@@ -547,8 +554,20 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
                         output_hmm[backbone_state_index]["transition"][total_columns + 1] = hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm]
                     else:
                         output_hmm[backbone_state_index]["transition"][total_columns + 1] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm]
+                    output_hmm[backbone_state_index]["insert_loop"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm][4]
+                    output_hmm[backbone_state_index]["self_match_to_insert"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm][1]
 
                     # print(str(backbone_state_index) + " to " + str(corresponding_next_backbone_state))
+                    # if(backbone_state_index == 2566):
+                    #     print("hmmfile: " + str(current_hmm_file))
+                    #     print("1whole row")
+                    #     pp.pprint(output_hmm[backbone_state_index]["transition"][total_columns + 1])
+                    #     print("1currently adding")
+                    #     pp.pprint(current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm])
+                    #     print("1with weights")
+                    #     pp.pprint(hmm_weights[current_hmm_file])
+                    #     print("1total weights is ")
+                    #     pp.pprint(hmm_weights)
             else:
                 # print("backbone state index: " + str(backbone_state_index))
                 for current_hmm_file in hmm_weights:
@@ -580,6 +599,31 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
                         output_hmm[backbone_state_index]["transition"][corresponding_next_backbone_state] = hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm]
                     else:
                         output_hmm[backbone_state_index]["transition"][corresponding_next_backbone_state] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm]
+
+                    output_hmm[backbone_state_index]["insert_loop"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm][4]
+                    output_hmm[backbone_state_index]["self_match_to_insert"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm][1]
+                    # DEBUG
+                    # if(backbone_state_index == 2566 and corresponding_next_backbone_state == 2567):
+                    #     print("hmmfile: " + str(current_hmm_file))
+                    #     print("2566-2567whole row")
+                    #     pp.pprint(output_hmm[backbone_state_index]["transition"][corresponding_next_backbone_state])
+                    #     print("2566-2567currently adding")
+                    #     pp.pprint(current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm])
+                    #     print("2566-2567with weights")
+                    #     pp.pprint(hmm_weights[current_hmm_file])
+                    #     print("2566-2567total weights is ")
+                    #     pp.pprint(hmm_weights)
+                    # elif(backbone_state_index == 2566):
+                    #     print("hmmfile: " + str(current_hmm_file))
+                    #     print("2566-endwhole row")
+                    #     pp.pprint(output_hmm[backbone_state_index]["transition"][corresponding_next_backbone_state])
+                    #     print("2566-endcurrently adding")
+                    #     pp.pprint(current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm])
+                    #     print("2566-endwith weights")
+                    #     pp.pprint(hmm_weights[current_hmm_file])
+                    #     print("2566-endtotal weights is ")
+                    #     pp.pprint(hmm_weights)
+
                     # print(str(backbone_state_index) + " to " + str(corresponding_next_backbone_state))
                     # print(-np.log(current_states_probabilities[current_hmm_file]["transition"][1]))
             # print(-np.log(output_hmm[0][]["transition"]))
