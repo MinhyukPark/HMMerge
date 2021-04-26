@@ -356,7 +356,7 @@ def get_matrices(cumulative_hmm, input_dir, backbone_alignment, fragmentary_sequ
             elif(is_deletion(row_index)):
                 npt.assert_almost_equal(np.sum(row), 0, decimal=2)
 
-        for row_index,row in enumerate(T[:num_states - 1,:]):
+        for row_index,row in enumerate(T[:num_states-1,:]):
             # print(row_index)
             # print(row)
             npt.assert_almost_equal(np.sum(row), 1, decimal=2)
@@ -461,13 +461,24 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
         break
 
     cumulative_hmm = {}
+
     for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
-        output_hmm = {}
         current_fragmentary_sequence = fragmentary_sequence_record.seq
         current_hmm_bitscores = bitscores[fragmentary_sequence_record.id]
+
+        output_hmm = {}
         for backbone_state_index in range(total_columns + 1):
+            # print("hmm weights sum to: " + str(np.sum(hmm_weights.values())))
+            # print(hmm_weights.values())
+            output_hmm[backbone_state_index] = {
+                "match": [],
+                "insertion": [],
+                "transition": {
+                },
+            }
             current_states_probabilities = {}
             hmm_weights = {}
+
             for current_hmm_index,current_hmm in hmms.items():
                 current_hmm_mapping = mappings[current_hmm_index]
                 if(backbone_state_index in current_hmm_mapping):
@@ -492,16 +503,8 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
             if(is_hmm_weights_all_zero):
                 for hmm_weight_index in hmm_weights:
                     hmm_weights[hmm_weight_index] = 1 / (len(hmm_weights))
-
-            # print("hmm weights sum to: " + str(np.sum(hmm_weights.values())))
-            # print(hmm_weights.values())
             npt.assert_almost_equal(sum(hmm_weights.values()), 1)
-            output_hmm[backbone_state_index] = {
-                "match": [],
-                "insertion": [],
-                "transition": {
-                },
-            }
+
             if(backbone_state_index == 0):
                 # this is the begin state
                 for current_hmm_file in hmm_weights:
@@ -524,7 +527,7 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
                         output_hmm[backbone_state_index]["transition"][corresponding_next_backbone_state] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm]
                     # print(str(backbone_state_index) + " to " + str(corresponding_next_backbone_state))
             elif(backbone_state_index == total_columns):
-                # this is the end state
+                # this is has a transition to the end state and is the last full column of states
                 for current_hmm_file in hmm_weights:
                     if(backbone_state_index not in mappings[current_hmm_file]):
                         continue
@@ -558,8 +561,8 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
                     for state_index in mappings[current_hmm_file]:
                         if(mappings[current_hmm_file][state_index] == next_state_in_hmm):
                             corresponding_next_backbone_state = state_index
-                    if(corresponding_next_backbone_state == None):
-                        corresponding_next_backbone_state = total_columns + 1 # this is the skip to the end state
+                    # if(corresponding_next_backbone_state == None):
+                        # corresponding_next_backbone_state = total_columns + 1 # this is the skip to the end state
                     # print("current state in hmm: " + str(current_state_in_hmm))
                     # print("corresponding (tranisitioning to) next backbone state index: " + str(corresponding_next_backbone_state))
 
@@ -694,6 +697,9 @@ def create_mappings_helper(input_fasta_filenames, backbone_alignment):
                 max_match_state_index = match_state_index
             match_state_sum += match_state_index
         assert match_state_sum == ((max_match_state_index * (max_match_state_index + 1)) / 2)
+        # DEBUG TODO: comeback to this
+        # DEBUG TODO: second note i think this is correct now
+        match_state_mappings[mapping_index][total_columns + 1] = max_match_state_index + 1
 
     for mapping_index,mapping in match_state_mappings.items():
         mapping[0] = 0
