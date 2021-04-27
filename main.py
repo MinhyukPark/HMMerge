@@ -195,7 +195,7 @@ def run_viterbi(adjacency_matrices_dict, emission_probabilities_dict, transition
                     if(sequence_index == 0):
                         # this means emitting an empty sequence which has a zero percent chance
                         current_emission_probability = 0
-                    max_value = 0
+                    max_value = -1
                     for search_state_index in range(state_index + 1):
                         current_value = lookup_table[sequence_index - 1,search_state_index] * transition_probabilities[search_state_index,state_index]
                         if(current_value > max_value):
@@ -207,7 +207,7 @@ def run_viterbi(adjacency_matrices_dict, emission_probabilities_dict, transition
                     #     emitted_all_letters = True
                 else:
                     # it's not an emission state
-                    max_value = 0
+                    max_value = -1
                     for search_state_index in range(state_index):
                         current_value = lookup_table[sequence_index,search_state_index] * transition_probabilities[search_state_index,state_index]
                         if(current_value > max_value):
@@ -215,15 +215,16 @@ def run_viterbi(adjacency_matrices_dict, emission_probabilities_dict, transition
                             backtrace_table[sequence_index,state_index] = (sequence_index,search_state_index)
                     lookup_table[sequence_index,state_index] = max_value
 
-        # readable_table = np.around(lookup_table, decimals=3)
-        # for state_index in range(len(emission_probabilities)):
-            # pp.pprint(readable_table[:,state_index])
-            # pp.pprint(transition_probabilities[state_index,:])
-        # pp.pprint(backtrace_table)
+        readable_table = np.around(lookup_table, decimals=3)
+        for state_index in range(len(emission_probabilities)):
+            pp.pprint(readable_table[:,state_index])
+            pp.pprint(transition_probabilities[state_index,:])
+        pp.pprint(backtrace_table)
 
         current_position = (len(current_fragmentary_sequence),len(emission_probabilities) - 1)
         while(current_position != (-1,-1)):
-            # pp.pprint(current_position)
+            print("tracing back current positions")
+            pp.pprint(current_position)
             current_sequence_index = current_position[0]
             current_state = current_position[1]
 
@@ -521,7 +522,8 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
                     for state_index in mappings[current_hmm_file]:
                         if(mappings[current_hmm_file][state_index] == next_state_in_hmm):
                             corresponding_next_backbone_state = state_index
-                    if(output_hmm[backbone_state_index]["insertion"] == []):
+                    # if(output_hmm[backbone_state_index]["insertion"] == []):
+                    if(len(output_hmm[backbone_state_index]["insertion"]) == 0):
                         output_hmm[backbone_state_index]["insertion"] = hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["insertion"][current_state_in_hmm]
                     else:
                         output_hmm[backbone_state_index]["insertion"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["insertion"][current_state_in_hmm]
@@ -539,12 +541,14 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
                     if(backbone_state_index not in mappings[current_hmm_file]):
                         continue
                     current_state_in_hmm = mappings[current_hmm_file][backbone_state_index]
-                    if(output_hmm[backbone_state_index]["match"] == []):
+                    # if(output_hmm[backbone_state_index]["match"] == []):
+                    if(len(output_hmm[backbone_state_index]["match"]) == 0):
                         output_hmm[backbone_state_index]["match"] = hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["match"][current_state_in_hmm]
                     else:
                         output_hmm[backbone_state_index]["match"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["match"][current_state_in_hmm]
 
-                    if(output_hmm[backbone_state_index]["insertion"] == []):
+                    # if(output_hmm[backbone_state_index]["insertion"] == []):
+                    if(len(output_hmm[backbone_state_index]["insertion"]) == 0):
                         output_hmm[backbone_state_index]["insertion"] = hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["insertion"][current_state_in_hmm]
                     else:
                         output_hmm[backbone_state_index]["insertion"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["insertion"][current_state_in_hmm]
@@ -585,12 +589,14 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
                     # print("current state in hmm: " + str(current_state_in_hmm))
                     # print("corresponding (tranisitioning to) next backbone state index: " + str(corresponding_next_backbone_state))
 
-                    if(output_hmm[backbone_state_index]["match"] == []):
+                    # if(output_hmm[backbone_state_index]["match"] == []):
+                    if(len(output_hmm[backbone_state_index]["match"]) == 0):
                         output_hmm[backbone_state_index]["match"] = hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["match"][current_state_in_hmm]
                     else:
                         output_hmm[backbone_state_index]["match"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["match"][current_state_in_hmm]
 
-                    if(output_hmm[backbone_state_index]["insertion"] == []):
+                    # if(output_hmm[backbone_state_index]["insertion"] == []):
+                    if(len(output_hmm[backbone_state_index]["insertion"]) == 0):
                         output_hmm[backbone_state_index]["insertion"] = hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["insertion"][current_state_in_hmm]
                     else:
                         output_hmm[backbone_state_index]["insertion"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["insertion"][current_state_in_hmm]
