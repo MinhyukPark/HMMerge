@@ -254,11 +254,17 @@ def run_viterbi_log(adjacency_matrices_dict, emission_probabilities_dict, transi
             # pp.pprint(transition_probabilities[state_index,:])
         # pp.ppirint(backtrace_table)
         with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
+            print("lookup table")
             print(lookup_table)
         with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
+            print("backtrace table")
+            print(backtrace_table)
+        with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
+            print("transition probabilities")
             print(transition_probabilities)
         with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
-            print(backtrace_table)
+            print("emission probabilities")
+            print(emission_probabilities)
 
         current_position = (len(current_fragmentary_sequence),len(emission_probabilities) - 1)
         while(current_position != (-1,-1)):
