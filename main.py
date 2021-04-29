@@ -44,35 +44,51 @@ def compute_alignment(cumulative_hmm, input_dir, backbone_alignment, fragmentary
     # aligned_sequences_dict = align_sequences(backtraced_states_dict, fragmentary_sequence_file)
 
     print("aligned sequences are")
-    pp.pprint(aligned_sequences_dict)
+    # pp.pprint(aligned_sequences_dict)
+    with np.printoptions(suppress=True, linewidth=np.inf):
+        print(aligned_sequences_dict)
     merged_alignment = get_merged_alignments(aligned_sequences_dict, backbone_alignment)
     print("merged alignment is")
-    pp.pprint(merged_alignment)
+    # pp.pprint(merged_alignment)
+    with np.printoptions(suppress=True, linewidth=np.inf):
+        print(merged_alignment)
     return merged_alignment
 
 def custom_merge_hmm_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix):
         mappings = create_custom_mappings(input_dir, backbone_alignment)
         print("the mappings are")
-        pp.pprint(mappings)
+        # pp.pprint(mappings)
+        with np.printoptions(suppress=True, linewidth=np.inf):
+            print(mappings)
         build_hmm_profiles(input_dir, mappings, output_prefix)
         bitscores = get_custom_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix)
         print("bitscores are")
-        pp.pprint(bitscores)
+        # pp.pprint(bitscores)
+        with np.printoptions(suppress=True, linewidth=np.inf):
+            print(bitscores)
         cumulative_hmm = get_custom_probabilities(input_dir, backbone_alignment, fragmentary_sequence_file, mappings, bitscores, output_prefix)
         print("output hmm is")
         pp.pprint(cumulative_hmm)
+        # with np.printoptions(suppress=True, linewidth=np.inf):
+            # print(cumulative_hmm)
         return cumulative_hmm
 
 def sepp_merge_hmm_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix):
         mappings = create_sepp_mappings(input_dir, backbone_alignment)
         print("the mappings are")
         pp.pprint(mappings)
+        with np.printoptions(suppress=True, linewidth=np.inf):
+            print(mappings)
         bitscores = get_sepp_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix)
         print("bitscores are")
-        pp.pprint(bitscores)
+        # pp.pprint(bitscores)
+        with np.printoptions(suppress=True, linewidth=np.inf):
+            print(bitscores)
         cumulative_hmm = get_sepp_probabilities(input_dir, backbone_alignment, fragmentary_sequence_file, mappings, bitscores, output_prefix)
         print("output hmm is")
         pp.pprint(cumulative_hmm)
+        # with np.printoptions(suppress=True, linewidth=np.inf):
+            # print(cumulative_hmm)
         return cumulative_hmm
 
 def get_merged_alignments(aligned_sequences_dict, backbone_alignment):
@@ -178,6 +194,7 @@ def run_viterbi_log(adjacency_matrices_dict, emission_probabilities_dict, transi
         lookup_table = np.zeros((len(current_fragmentary_sequence) + 1, len(emission_probabilities)))
         lookup_table.fill(np.NINF)
         backtrace_table = np.empty(lookup_table.shape, dtype=object)
+        backtrace_table.fill((-3,-3))
         lookup_table[0,0] = 0
         backtrace_table[0,0] = (-1,-1)
         # [0,j] should be -inf but i'm making everything -inf in the initilazation
@@ -231,14 +248,22 @@ def run_viterbi_log(adjacency_matrices_dict, emission_probabilities_dict, transi
                     else:
                         lookup_table[sequence_index,state_index] = max_value
 
-        readable_table = np.around(lookup_table, decimals=3)
-        for state_index in range(len(emission_probabilities)):
-            pp.pprint(readable_table[:,state_index])
-            pp.pprint(transition_probabilities[state_index,:])
-        pp.pprint(backtrace_table)
+        # readable_table = np.around(lookup_table, decimals=3)
+        # for state_index in range(len(emission_probabilities)):
+            # pp.pprint(readable_table[:,state_index])
+            # pp.pprint(transition_probabilities[state_index,:])
+        # pp.ppirint(backtrace_table)
+        with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
+            print(lookup_table)
+        with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
+            print(transition_probabilities)
+        with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
+            print(backtrace_table)
 
         current_position = (len(current_fragmentary_sequence),len(emission_probabilities) - 1)
         while(current_position != (-1,-1)):
+            if(current_position == (-2,-2)):
+                raise Exception("-2-2 state")
             print("tracing back current positions")
             pp.pprint(current_position)
             current_sequence_index = current_position[0]
@@ -401,6 +426,9 @@ def get_matrices(cumulative_hmm, input_dir, backbone_alignment, fragmentary_sequ
         # start state doesn't connect to I1
         M[0,4] = 1 # edge from start state to D1
 
+        M[1,1] = 2 # edge from I0 to I0
+        M[1,2] = 1 # edge from I0 to M1
+
         for i in range(1, total_columns):
             M[get_index("M", i),get_index("M", i + 1)] = 1 # Mi to Mi+1
             M[get_index("M", i),get_index("I", i)] = 1 # Mi to Ii
@@ -489,7 +517,7 @@ def is_match(state_index):
     return (state_index - 2) % 3 == 0
 
 def is_insertion(state_index):
-    return (state_index - 2) % 3 == 1
+    return state_index == 1 or (state_index - 2) % 3 == 1
 
 def is_deletion(state_index):
     return (state_index - 2) % 3 == 2
@@ -625,6 +653,8 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
             if(is_hmm_weights_all_zero):
                 for hmm_weight_index in hmm_weights:
                     hmm_weights[hmm_weight_index] = 1 / (len(hmm_weights))
+            print("hmm weights for " + str(fragmentary_sequence_record.id) + " at backbone state " + str(backbone_state_index))
+            pp.pprint(hmm_weights)
             npt.assert_almost_equal(sum(hmm_weights.values()), 1)
 
             if(backbone_state_index == 0):

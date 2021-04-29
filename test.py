@@ -19,6 +19,27 @@ def setup_merge_inputs(test_root, test_suffix):
     os.mkdir(TEMP_OUTPUT_PREFIX + test_suffix)
     return test_root,backbone_alignment,fragment_sequences_file,test_root
 
+def test_merge_1_insertion_1_fragment_5_subsets_0():
+    test_root = "./test/merge_test/merge_1_insertion_1_fragment_5_subsets_0/"
+    test_suffix = "merge_1_insertion_1_fragment_5_subsets_0/"
+    input_dir,backbone_alignment,fragment_sequences_file,test_root = setup_merge_inputs(test_root, test_suffix)
+    output_prefix = TEMP_OUTPUT_PREFIX + test_suffix
+    cumulative_hmm = main.custom_merge_hmm_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
+    merged_alignment = main.compute_alignment(cumulative_hmm, input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
+    assert merged_alignment == {
+        "fragment": "tAAAAA",
+        "s1":  "-AAAAA",
+        "s2":  "-AAAAA",
+        "s3":  "-AAAAA",
+        "s4":  "-AAAAA",
+        "s5":  "-AAAAA",
+        "s6":  "-AAAAA",
+        "s7":  "-AAAAA",
+        "s8":  "-AAAAA",
+        "s9":  "-AAAAA",
+        "s10": "-AAAAA",
+    }
+
 def test_merge_1_insertion_2_fragments_2_subsets_0():
     test_root = "./test/merge_test/merge_1_insertion_2_fragments_2_subsets_0/"
     test_suffix = "merge_1_insertion_2_fragments_2_subsets_0/"
@@ -185,4 +206,5 @@ def test_front_middle_end_missing_3_subsets():
         1: {0: 0, 1: 1, 2: 2, 3: 3, 7: 4, 8: 5, 9: 6, 10: 7},
         2: {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 10: 7},
     }
+
 
