@@ -24,8 +24,7 @@ def test_merge_1_insertion_1_fragment_5_subsets_0():
     test_suffix = "merge_1_insertion_1_fragment_5_subsets_0/"
     input_dir,backbone_alignment,fragment_sequences_file,test_root = setup_merge_inputs(test_root, test_suffix)
     output_prefix = TEMP_OUTPUT_PREFIX + test_suffix
-    cumulative_hmm = main.custom_merge_hmm_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
-    merged_alignment = main.compute_alignment(cumulative_hmm, input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
+    merged_alignment = main.merge_hmms_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix, True)
     assert merged_alignment == {
         "fragment": "tAAAAA",
         "s1":  "-AAAAA",
@@ -45,8 +44,7 @@ def test_merge_1_insertion_1_fragment_5_subsets_1():
     test_suffix = "merge_1_insertion_1_fragment_5_subsets_1/"
     input_dir,backbone_alignment,fragment_sequences_file,test_root = setup_merge_inputs(test_root, test_suffix)
     output_prefix = TEMP_OUTPUT_PREFIX + test_suffix
-    cumulative_hmm = main.custom_merge_hmm_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
-    merged_alignment = main.compute_alignment(cumulative_hmm, input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
+    merged_alignment = main.merge_hmms_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix, True)
     assert merged_alignment == {
         "fragment": "AtAAAA",
         "s1":  "A-AAAA",
@@ -65,8 +63,7 @@ def test_merge_1_insertion_1_fragment_5_subsets_2():
     test_suffix = "merge_1_insertion_1_fragment_5_subsets_2/"
     input_dir,backbone_alignment,fragment_sequences_file,test_root = setup_merge_inputs(test_root, test_suffix)
     output_prefix = TEMP_OUTPUT_PREFIX + test_suffix
-    cumulative_hmm = main.custom_merge_hmm_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
-    merged_alignment = main.compute_alignment(cumulative_hmm, input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
+    merged_alignment = main.merge_hmms_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix, True)
     assert merged_alignment == {
         "fragment": "AAtAAA",
         "s1":  "AA-AAA",
@@ -85,8 +82,7 @@ def test_merge_1_insertion_1_fragment_5_subsets_3():
     test_suffix = "merge_1_insertion_1_fragment_5_subsets_3/"
     input_dir,backbone_alignment,fragment_sequences_file,test_root = setup_merge_inputs(test_root, test_suffix)
     output_prefix = TEMP_OUTPUT_PREFIX + test_suffix
-    cumulative_hmm = main.custom_merge_hmm_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
-    merged_alignment = main.compute_alignment(cumulative_hmm, input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
+    merged_alignment = main.merge_hmms_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix, True)
     assert merged_alignment == {
         "fragment": "AAAtAA",
         "s1":  "AAA-AA",
@@ -105,8 +101,7 @@ def test_merge_1_insertion_1_fragment_5_subsets_4():
     test_suffix = "merge_1_insertion_1_fragment_5_subsets_4/"
     input_dir,backbone_alignment,fragment_sequences_file,test_root = setup_merge_inputs(test_root, test_suffix)
     output_prefix = TEMP_OUTPUT_PREFIX + test_suffix
-    cumulative_hmm = main.custom_merge_hmm_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
-    merged_alignment = main.compute_alignment(cumulative_hmm, input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
+    merged_alignment = main.merge_hmms_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix, True)
     assert merged_alignment == {
         "fragment": "AAAAtA",
         "s1":  "AAAA-A",
@@ -125,8 +120,7 @@ def test_merge_1_insertion_1_fragment_5_subsets_5():
     test_suffix = "merge_1_insertion_1_fragment_5_subsets_5/"
     input_dir,backbone_alignment,fragment_sequences_file,test_root = setup_merge_inputs(test_root, test_suffix)
     output_prefix = TEMP_OUTPUT_PREFIX + test_suffix
-    cumulative_hmm = main.custom_merge_hmm_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
-    merged_alignment = main.compute_alignment(cumulative_hmm, input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
+    merged_alignment = main.merge_hmms_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix, True)
     assert merged_alignment == {
         "fragment": "AAAAAt",
         "s1":  "AAAAA-",
@@ -146,8 +140,7 @@ def test_merge_7_insertion_1_fragment_5_subsets_0():
     test_suffix = "merge_7_insertion_1_fragment_5_subsets_0/"
     input_dir,backbone_alignment,fragment_sequences_file,test_root = setup_merge_inputs(test_root, test_suffix)
     output_prefix = TEMP_OUTPUT_PREFIX + test_suffix
-    cumulative_hmm = main.custom_merge_hmm_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
-    merged_alignment = main.compute_alignment(cumulative_hmm, input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
+    merged_alignment = main.merge_hmms_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix, True)
     assert merged_alignment == {
         "fragment": "tttttttAAAAA",
         "s1":  "-------AAAAA",
@@ -167,8 +160,7 @@ def test_merge_5_insertion_1_fragment_5_subsets_0():
     test_suffix = "merge_5_insertion_1_fragment_5_subsets_0/"
     input_dir,backbone_alignment,fragment_sequences_file,test_root = setup_merge_inputs(test_root, test_suffix)
     output_prefix = TEMP_OUTPUT_PREFIX + test_suffix
-    cumulative_hmm = main.custom_merge_hmm_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
-    merged_alignment = main.compute_alignment(cumulative_hmm, input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
+    merged_alignment = main.merge_hmms_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix, True)
     assert merged_alignment == {
         "fragment": "tttAAAAAtt",
         "s1":  "---AAAAA--",
@@ -188,8 +180,7 @@ def test_merge_1_insertion_2_fragments_2_subsets_0():
     test_suffix = "merge_1_insertion_2_fragments_2_subsets_0/"
     input_dir,backbone_alignment,fragment_sequences_file,test_root = setup_merge_inputs(test_root, test_suffix)
     output_prefix = TEMP_OUTPUT_PREFIX + test_suffix
-    cumulative_hmm = main.custom_merge_hmm_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
-    merged_alignment = main.compute_alignment(cumulative_hmm, input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
+    merged_alignment = main.merge_hmms_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix, True)
     assert merged_alignment == {
         "fragment-0": "A-AAAtAAAA",
         "fragment-1": "AtAAA-AAAA",
@@ -208,8 +199,7 @@ def test_merge_1_insertion_2_fragments_2_subsets_1():
     test_suffix = "merge_1_insertion_2_fragments_2_subsets_1/"
     input_dir,backbone_alignment,fragment_sequences_file,test_root = setup_merge_inputs(test_root, test_suffix)
     output_prefix = TEMP_OUTPUT_PREFIX + test_suffix
-    cumulative_hmm = main.custom_merge_hmm_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
-    merged_alignment = main.compute_alignment(cumulative_hmm, input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
+    merged_alignment = main.merge_hmms_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix, True)
     assert merged_alignment == {
         "fragment-0": "A-AAAtAAAAGGGGGGGGGGGGGGGGGGGG",
         "fragment-1": "TaTTT-TTTTGGGGGGGGGGGGGGGGGGGG",
@@ -228,8 +218,7 @@ def test_merge_1_insertion_2_fragments_2_subsets_2():
     test_suffix = "merge_1_insertion_2_fragments_2_subsets_2/"
     input_dir,backbone_alignment,fragment_sequences_file,test_root = setup_merge_inputs(test_root, test_suffix)
     output_prefix = TEMP_OUTPUT_PREFIX + test_suffix
-    cumulative_hmm = main.custom_merge_hmm_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
-    merged_alignment = main.compute_alignment(cumulative_hmm, input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
+    merged_alignment = main.merge_hmms_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix, True)
     assert merged_alignment == {
         "fragment-0": "AAAAt---AAAAGGGGGGGGGGGGGGGGGGGG",
         "fragment-1": "TTTTatttTTTTGGGGGGGGGGGGGGGGG---",
@@ -249,8 +238,7 @@ def test_merge_1_insertion_2_subsets_0():
     test_suffix = "merge_1_insertion_2_subsets_0/"
     input_dir,backbone_alignment,fragment_sequences_file,test_root = setup_merge_inputs(test_root, test_suffix)
     output_prefix = TEMP_OUTPUT_PREFIX + test_suffix
-    cumulative_hmm = main.custom_merge_hmm_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
-    merged_alignment = main.compute_alignment(cumulative_hmm, input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
+    merged_alignment = main.merge_hmms_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix, True)
     assert merged_alignment == {
         "fragment": "AAAAtAAAA",
         "s1":       "AAAA-AAAA",
@@ -268,8 +256,7 @@ def test_merge_2_subsets_0():
     test_suffix = "merge_2_subsets_0/"
     input_dir,backbone_alignment,fragment_sequences_file,test_root = setup_merge_inputs(test_root, test_suffix)
     output_prefix = TEMP_OUTPUT_PREFIX + test_suffix
-    cumulative_hmm = main.custom_merge_hmm_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
-    merged_alignment = main.compute_alignment(cumulative_hmm, input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
+    merged_alignment = main.merge_hmms_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix, True)
     assert merged_alignment == {
         "fragment": "AAAAAAAA----------------------",
         "s1":       "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
