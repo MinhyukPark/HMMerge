@@ -49,21 +49,21 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
     else:
         mappings,bitscores,hmms = sepp_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix)
 
-    print("the mappings are")
-    pp.pprint(mappings)
-    with np.printoptions(suppress=True, linewidth=np.inf):
-        print(mappings)
-    print("bitscores are")
+    # print("the mappings are")
+    # pp.pprint(mappings)
+    # with np.printoptions(suppress=True, linewidth=np.inf):
+        # print(mappings)
+    # print("bitscores are")
     # pp.pprint(bitscores)
-    with np.printoptions(suppress=True, linewidth=np.inf):
-        print(bitscores)
+    # with np.printoptions(suppress=True, linewidth=np.inf):
+        # print(bitscores)
 
     for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
         fragmentary_sequence = fragmentary_sequence_record.seq
         fragmentary_sequence_id = fragmentary_sequence_record.id
         output_hmm = get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)
-        print("the output hmm for sequence " + str(fragmentary_sequence_id) + " is")
-        pp.pprint(mappings)
+        # print("the output hmm for sequence " + str(fragmentary_sequence_id) + " is")
+        # pp.pprint(mappings)
         adjacency_matrix,emission_probabilities,transition_probabilities,alphabet = get_matrices(output_hmm, input_dir, backbone_alignment, output_prefix)
         print("adjacency matrix for sequence " + str(fragmentary_sequence_id) + " is")
         # with np.printoptions(suppress=True, linewidth=np.inf):
@@ -282,8 +282,8 @@ def run_viterbi_log(adjacency_matrix, emission_probabilities, transition_probabi
             raise Exception("-2-2 state")
         if(current_position == (-3,-3)):
             raise Exception("-3-3 state")
-        print("tracing back current positions")
-        pp.pprint(current_position)
+        # print("tracing back current positions")
+        # pp.pprint(current_position)
         current_sequence_index = current_position[0]
         current_state = current_position[1]
 
@@ -371,16 +371,16 @@ def run_viterbi(adjacency_matrices_dict, emission_probabilities_dict, transition
                     else:
                         lookup_table[sequence_index,state_index] = max_value
 
-        readable_table = np.around(lookup_table, decimals=3)
-        for state_index in range(len(emission_probabilities)):
-            pp.pprint(readable_table[:,state_index])
-            pp.pprint(transition_probabilities[state_index,:])
-        pp.pprint(backtrace_table)
+        # readable_table = np.around(lookup_table, decimals=3)
+        # for state_index in range(len(emission_probabilities)):
+            # pp.pprint(readable_table[:,state_index])
+            # pp.pprint(transition_probabilities[state_index,:])
+        # pp.pprint(backtrace_table)
 
         current_position = (len(current_fragmentary_sequence),len(emission_probabilities) - 1)
         while(current_position != (-1,-1)):
-            print("tracing back current positions")
-            pp.pprint(current_position)
+            # print("tracing back current positions")
+            # pp.pprint(current_position)
             current_sequence_index = current_position[0]
             current_state = current_position[1]
 
@@ -665,8 +665,8 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
         if(is_hmm_weights_all_zero):
             for hmm_weight_index in hmm_weights:
                 hmm_weights[hmm_weight_index] = 1 / (len(hmm_weights))
-        print("hmm weights for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
-        pp.pprint(hmm_weights)
+        # print("hmm weights for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
+        # pp.pprint(hmm_weights)
         npt.assert_almost_equal(sum(hmm_weights.values()), 1)
 
         if(backbone_state_index == 0):
@@ -897,7 +897,7 @@ def create_mappings_helper(input_fasta_filenames, backbone_alignment):
         match_state_mappings[current_hmm_index] = cumulative_mapping
 
     for mapping_index,mapping in match_state_mappings.items():
-        pp.pprint(mapping)
+        # pp.pprint(mapping)
         max_match_state_index = -1
         match_state_sum = 0
         for backbone_index,match_state_index in mapping.items():
