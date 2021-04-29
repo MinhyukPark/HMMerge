@@ -67,16 +67,16 @@ def test_merge_1_insertion_2_fragments_2_subsets_2():
     cumulative_hmm = main.custom_merge_hmm_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
     merged_alignment = main.compute_alignment(cumulative_hmm, input_dir, backbone_alignment, fragment_sequences_file, output_prefix)
     assert merged_alignment == {
-        "fragment-0": "A----AAAtAAAAGGGGGGGGGGGGGGGGGGGG",
-        "fragment-1": "TtttaTTT-TTTTGGGGGGGGGGGGGGGGG---",
-        "s1":         "A----AAA-AAAAGGGGGGGGGGGGGGGGGGGG",
-        "s2":         "A----AAA-AAAAGGGGGGGGGGGGGGGGGGGG",
-        "s3":         "A----AAA-AAAAGGGGGGGGGGGGGGGGGGGG",
-        "s4":         "A----AAA-AAAAGGGGGGGGGGGGGGGGGGGG",
-        "s5":         "T----TTT-TTTTGGGGGGGGGGGGGGGGGGGG",
-        "s6":         "T----TTT-TTTTGGGGGGGGGGGGGGGGGGGG",
-        "s7":         "T----TTT-TTTTGGGGGGGGGGGGGGGGGGGG",
-        "s8":         "T----TTT-TTTTGGGGGGGGGGGGGGGGGGGG",
+        "fragment-0": "AAAAt---AAAAGGGGGGGGGGGGGGGGGGGG",
+        "fragment-1": "TTTTatttTTTTGGGGGGGGGGGGGGGGG---",
+        "s1":         "AAAA----AAAAGGGGGGGGGGGGGGGGGGGG",
+        "s2":         "AAAA----AAAAGGGGGGGGGGGGGGGGGGGG",
+        "s3":         "AAAA----AAAAGGGGGGGGGGGGGGGGGGGG",
+        "s4":         "AAAA----AAAAGGGGGGGGGGGGGGGGGGGG",
+        "s5":         "TTTT----TTTTGGGGGGGGGGGGGGGGGGGG",
+        "s6":         "TTTT----TTTTGGGGGGGGGGGGGGGGGGGG",
+        "s7":         "TTTT----TTTTGGGGGGGGGGGGGGGGGGGG",
+        "s8":         "TTTT----TTTTGGGGGGGGGGGGGGGGGGGG",
     }
 
 

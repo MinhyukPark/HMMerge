@@ -40,7 +40,7 @@ def compute_alignment(cumulative_hmm, input_dir, backbone_alignment, fragmentary
     # pp.pprint(adjacency_matrices_dict)
     # pp.pprint(emission_probabilities_dict)
     # pp.pprint(transition_probabilities_dict)
-    aligned_sequences_dict = run_viterbi(adjacency_matrices_dict, emission_probabilities_dict, transition_probabilities_dict, alphabet, fragmentary_sequence_file)
+    aligned_sequences_dict = run_viterbi_log(adjacency_matrices_dict, emission_probabilities_dict, transition_probabilities_dict, alphabet, fragmentary_sequence_file)
     # aligned_sequences_dict = align_sequences(backtraced_states_dict, fragmentary_sequence_file)
 
     print("aligned sequences are")
@@ -162,6 +162,115 @@ def get_merged_alignments(aligned_sequences_dict, backbone_alignment):
 
 #         aligned_sequences[current_fragmentary_sequence_id] = current_aligned_sequence
 #     return aligned_sequences
+
+def run_viterbi_log(adjacency_matrices_dict, emission_probabilities_dict, transition_probabilities_dict, alphabet, fragmentary_sequence_file):
+    backtraced_states_dict = {}
+    aligned_sequences_dict = {}
+    for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
+        backtraced_states = []
+        aligned_sequence = ""
+        current_fragmentary_sequence = fragmentary_sequence_record.seq
+        current_fragmentary_sequence_id = fragmentary_sequence_record.id
+        adjacency_matrix = adjacency_matrices_dict[current_fragmentary_sequence_id]
+        emission_probabilities = emission_probabilities_dict[current_fragmentary_sequence_id]
+        transition_probabilities = transition_probabilities_dict[current_fragmentary_sequence_id]
+        emission_state_mask = emission_probabilities_dict[current_fragmentary_sequence_id]
+        lookup_table = np.zeros((len(current_fragmentary_sequence) + 1, len(emission_probabilities)))
+        lookup_table.fill(np.NINF)
+        backtrace_table = np.empty(lookup_table.shape, dtype=object)
+        lookup_table[0,0] = 0
+        backtrace_table[0,0] = (-1,-1)
+        # [0,j] should be -inf but i'm making everything -inf in the initilazation
+        for state_index in range(len(emission_probabilities)):
+            # if(emitted_all_letters):
+            #     break
+            for sequence_index in range(len(current_fragmentary_sequence) + 1):
+                # if(emitted_all_letters):
+                #     break
+                if(state_index == 0 and sequence_index == 0):
+                    # this is already handled by the base case
+                    continue
+                if(np.sum(emission_probabilities[state_index]) > 0):
+                    # it's an emission state
+                    current_emission_probability = np.log2(emission_probabilities[state_index,alphabet.index(current_fragmentary_sequence[sequence_index - 1])])
+                    if(sequence_index == 0):
+                        # this means emitting an empty sequence which has a zero percent chance
+                        current_emission_probability = np.NINF
+                    max_value = np.NINF
+                    for search_state_index in range(state_index + 1):
+                        current_value = lookup_table[sequence_index - 1,search_state_index]
+                        if(transition_probabilities[search_state_index,state_index] == 0):
+                            current_value = np.NINF
+                        else:
+                            current_value += np.log2(transition_probabilities[search_state_index,state_index])
+                        if(current_value > max_value):
+                            max_value = current_value
+                            backtrace_table[sequence_index,state_index] = (sequence_index - 1,search_state_index)
+                    lookup_table[sequence_index,state_index] = current_emission_probability + max_value
+                    # if(sequence_index == len(current_fragmentary_sequence) - 1):
+                    #     ending_tuple = (sequence_index,state_index)
+                    #     emitted_all_letters = True
+                else:
+                    # it's not an emission state
+                    # DEBUG NONE
+                    max_value = np.NINF
+                    for search_state_index in range(state_index):
+                        current_value = lookup_table[sequence_index,search_state_index]
+                        if(transition_probabilities[search_state_index,state_index] == 0):
+                            current_value = np.NINF
+                        else:
+                            current_value += np.log2(transition_probabilities[search_state_index,state_index])
+                        if(current_value > max_value):
+                            max_value = current_value
+                            backtrace_table[sequence_index,state_index] = (sequence_index,search_state_index)
+                    # DEBUG: there should never be acase where we are in the begin state but have advanced in the sequence
+                    # it should have taken deletion states
+                    if(state_index == 0):
+                        backtrace_table[sequence_index,state_index] = (-2,-2)
+                        lookup_table[sequence_index,state_index] = np.NINF
+                    else:
+                        lookup_table[sequence_index,state_index] = max_value
+
+        readable_table = np.around(lookup_table, decimals=3)
+        for state_index in range(len(emission_probabilities)):
+            pp.pprint(readable_table[:,state_index])
+            pp.pprint(transition_probabilities[state_index,:])
+        pp.pprint(backtrace_table)
+
+        current_position = (len(current_fragmentary_sequence),len(emission_probabilities) - 1)
+        while(current_position != (-1,-1)):
+            print("tracing back current positions")
+            pp.pprint(current_position)
+            current_sequence_index = current_position[0]
+            current_state = current_position[1]
+
+            backtraced_states.append(current_state)
+            current_position = backtrace_table[current_position]
+            if(np.sum(emission_probabilities[current_state]) > 0):
+                # current position is already the previous position here
+                previous_state_in_sequence = current_position[1]
+                assert previous_state_in_sequence <= current_state
+                assert transition_probabilities[previous_state_in_sequence][current_state] > 0
+                # print(current_state)
+                # print(previous_state_in_sequence)
+                assert adjacency_matrix[previous_state_in_sequence][current_state] > 0
+                if(adjacency_matrix[previous_state_in_sequence][current_state] == 2 or is_insertion(current_state)):
+                    # print("insertion in fragment")
+                    aligned_sequence += current_fragmentary_sequence[current_sequence_index - 1].lower()
+                elif(adjacency_matrix[previous_state_in_sequence][current_state] == 1):
+                    aligned_sequence += current_fragmentary_sequence[current_sequence_index - 1].upper()
+                else:
+                    raise Exception("Illegal transition")
+            elif(current_state != 0 and current_state != len(emission_probabilities) - 1):
+                aligned_sequence += "-"
+
+        backtraced_states = backtraced_states[::-1]
+        aligned_sequence = aligned_sequence[::-1]
+        # pp.pprint(backtraced_states)
+        # pp.pprint(aligned_sequence)
+        backtraced_states_dict[current_fragmentary_sequence_id] = backtraced_states
+        aligned_sequences_dict[current_fragmentary_sequence_id] = aligned_sequence
+    return aligned_sequences_dict
 
 def run_viterbi(adjacency_matrices_dict, emission_probabilities_dict, transition_probabilities_dict, alphabet, fragmentary_sequence_file):
     backtraced_states_dict = {}
