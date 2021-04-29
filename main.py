@@ -25,48 +25,61 @@ np.set_printoptions(threshold=np.inf)
 def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, build):
     merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, build)
 
+def custom_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix):
+    mappings = create_custom_mappings(input_dir, backbone_alignment)
+    build_hmm_profiles(input_dir, mappings, output_prefix)
+    bitscores = get_custom_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix)
+    hmms = get_custom_probabilities(input_dir, backbone_alignment, mappings, bitscores, output_prefix)
+    return mappings,bitscores,hmms
+
+def sepp_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix):
+    mappings = create_sepp_mappings(input_dir, backbone_alignment)
+    bitscores = get_sepp_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix)
+    hmms = get_sepp_probabilities(input_dir, backbone_alignment, mappings, bitscores, output_prefix)
+    return mappings,bitscores,hmms
+
+
 def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, build):
     mappings = None
     bitscores = None
     aligned_sequences_dict = {}
     hmms = None
     if(build):
-        mappings = create_custom_mappings(input_dir, backbone_alignment)
-        print("the mappings are")
-        # pp.pprint(mappings)
-        with np.printoptions(suppress=True, linewidth=np.inf):
-            print(mappings)
-        build_hmm_profiles(input_dir, mappings, output_prefix)
-        bitscores = get_custom_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix)
-        print("bitscores are")
-        # pp.pprint(bitscores)
-        with np.printoptions(suppress=True, linewidth=np.inf):
-            print(bitscores)
-        hmms = get_custom_probabilities(input_dir, backbone_alignment, mappings, bitscores, output_prefix)
+        mappings,bitscores,hmms = custom_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix)
     else:
-        mappings = create_sepp_mappings(input_dir, backbone_alignment)
-        print("the mappings are")
-        pp.pprint(mappings)
-        with np.printoptions(suppress=True, linewidth=np.inf):
-            print(mappings)
-        bitscores = get_sepp_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix)
-        print("bitscores are")
-        # pp.pprint(bitscores)
-        with np.printoptions(suppress=True, linewidth=np.inf):
-            print(bitscores)
-        hmms = get_sepp_probabilities(input_dir, backbone_alignment, mappings, bitscores, output_prefix)
+        mappings,bitscores,hmms = sepp_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix)
+
+    print("the mappings are")
+    pp.pprint(mappings)
+    with np.printoptions(suppress=True, linewidth=np.inf):
+        print(mappings)
+    print("bitscores are")
+    # pp.pprint(bitscores)
+    with np.printoptions(suppress=True, linewidth=np.inf):
+        print(bitscores)
 
     for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
         fragmentary_sequence = fragmentary_sequence_record.seq
         fragmentary_sequence_id = fragmentary_sequence_record.id
-
         output_hmm = get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)
-
+        print("the output hmm for sequence " + str(fragmentary_sequence_id) + " is")
+        pp.pprint(mappings)
         adjacency_matrix,emission_probabilities,transition_probabilities,alphabet = get_matrices(output_hmm, input_dir, backbone_alignment, output_prefix)
+        print("adjacency matrix for sequence " + str(fragmentary_sequence_id) + " is")
+        # with np.printoptions(suppress=True, linewidth=np.inf):
+            # print(adjacency_matrix)
+        # print(adjacency_matrix[len(adjacency_matrix) - 2,:])
+        print("emission probabilities for sequence " + str(fragmentary_sequence_id) + " is")
+        # with np.printoptions(suppress=True, linewidth=np.inf):
+            # print(emission_probabilities)
+        print("tranistion probabilities for sequence " + str(fragmentary_sequence_id) + " is")
+        # with np.printoptions(suppress=True, linewidth=np.inf):
+            # print(transition_probabilities)
+        print("starting viterbi")
+        aligned_sequences_dict[fragmentary_sequence_record.id] = run_viterbi_log(adjacency_matrix, emission_probabilities, transition_probabilities, alphabet, fragmentary_sequence)
     # pp.pprint(adjacency_matrices_dict)
     # pp.pprint(emission_probabilities_dict)
     # pp.pprint(transition_probabilities_dict)
-        aligned_sequences_dict[fragmentary_sequence_record.id] = run_viterbi_log(adjacency_matrix, emission_probabilities, transition_probabilities, alphabet, fragmentary_sequence)
     # aligned_sequences_dict = align_sequences(backtraced_states_dict, fragmentary_sequence_file)
 
     print("aligned sequences are")
@@ -185,6 +198,8 @@ def run_viterbi_log(adjacency_matrix, emission_probabilities, transition_probabi
     for state_index in range(len(emission_probabilities)):
         # if(emitted_all_letters):
         #     break
+        if(state_index % 300 == 0):
+            print("state index: " + str(state_index))
         for sequence_index in range(len(current_fragmentary_sequence) + 1):
             # if(emitted_all_letters):
             #     break
@@ -198,15 +213,21 @@ def run_viterbi_log(adjacency_matrix, emission_probabilities, transition_probabi
                     # this means emitting an empty sequence which has a zero percent chance
                     current_emission_probability = np.NINF
                 max_value = np.NINF
+
                 for search_state_index in range(state_index + 1):
-                    current_value = lookup_table[sequence_index - 1,search_state_index]
-                    if(transition_probabilities[search_state_index,state_index] == 0):
-                        current_value = np.NINF
+                    if(adjacency_matrix[search_state_index,state_index] == 0):
+                        if(transition_probabilities[search_state_index,state_index] != 0):
+                            raise Exception("No edge but transition probability exists")
+                        continue
                     else:
-                        current_value += np.log2(transition_probabilities[search_state_index,state_index])
-                    if(current_value > max_value):
-                        max_value = current_value
-                        backtrace_table[sequence_index,state_index] = (sequence_index - 1,search_state_index)
+                        current_value = lookup_table[sequence_index - 1,search_state_index]
+                        if(transition_probabilities[search_state_index,state_index] == 0):
+                            current_value = np.NINF
+                        else:
+                            current_value += np.log2(transition_probabilities[search_state_index,state_index])
+                        if(current_value > max_value):
+                            max_value = current_value
+                            backtrace_table[sequence_index,state_index] = (sequence_index - 1,search_state_index)
                 lookup_table[sequence_index,state_index] = current_emission_probability + max_value
                 # if(sequence_index == len(current_fragmentary_sequence) - 1):
                 #     ending_tuple = (sequence_index,state_index)
@@ -216,14 +237,19 @@ def run_viterbi_log(adjacency_matrix, emission_probabilities, transition_probabi
                 # DEBUG NONE
                 max_value = np.NINF
                 for search_state_index in range(state_index):
-                    current_value = lookup_table[sequence_index,search_state_index]
-                    if(transition_probabilities[search_state_index,state_index] == 0):
-                        current_value = np.NINF
+                    if(adjacency_matrix[search_state_index,state_index] == 0):
+                        if(transition_probabilities[search_state_index,state_index] != 0):
+                            raise Exception("No edge but transition probability exists")
+                        continue
                     else:
-                        current_value += np.log2(transition_probabilities[search_state_index,state_index])
-                    if(current_value > max_value):
-                        max_value = current_value
-                        backtrace_table[sequence_index,state_index] = (sequence_index,search_state_index)
+                        current_value = lookup_table[sequence_index,search_state_index]
+                        if(transition_probabilities[search_state_index,state_index] == 0):
+                            current_value = np.NINF
+                        else:
+                            current_value += np.log2(transition_probabilities[search_state_index,state_index])
+                        if(current_value > max_value):
+                            max_value = current_value
+                            backtrace_table[sequence_index,state_index] = (sequence_index,search_state_index)
                 # DEBUG: there should never be acase where we are in the begin state but have advanced in the sequence
                 # it should have taken deletion states
                 if(state_index == 0):
@@ -237,23 +263,25 @@ def run_viterbi_log(adjacency_matrix, emission_probabilities, transition_probabi
         # pp.pprint(readable_table[:,state_index])
         # pp.pprint(transition_probabilities[state_index,:])
     # pp.ppirint(backtrace_table)
-    with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
-        print("lookup table")
-        print(lookup_table)
-    with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
-        print("backtrace table")
-        print(backtrace_table)
-    with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
-        print("transition probabilities")
-        print(transition_probabilities)
-    with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
-        print("emission probabilities")
-        print(emission_probabilities)
+    # with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
+    #     print("lookup table")
+    #     print(lookup_table)
+    # with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
+    #     print("backtrace table")
+    #     print(backtrace_table)
+    # with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
+    #     print("transition probabilities")
+    #     print(transition_probabilities)
+    # with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
+    #     print("emission probabilities")
+    #     print(emission_probabilities)
 
     current_position = (len(current_fragmentary_sequence),len(emission_probabilities) - 1)
     while(current_position != (-1,-1)):
         if(current_position == (-2,-2)):
             raise Exception("-2-2 state")
+        if(current_position == (-3,-3)):
+            raise Exception("-3-3 state")
         print("tracing back current positions")
         pp.pprint(current_position)
         current_sequence_index = current_position[0]
@@ -403,32 +431,32 @@ def get_matrices(output_hmm, input_dir, backbone_alignment, output_prefix):
     P = np.zeros((num_states, num_characters)) # emission probability table
     current_emission_state_mask = np.zeros(num_states)
 
-    M[0,1] = 1 # edge from start state to I0
-    M[0,2] = 1 # edge from start state to M1
-    # start state doesn't connect to I1
-    M[0,4] = 1 # edge from start state to D1
+    # M[0,1] = 1 # edge from start state to I0
+    # M[0,2] = 1 # edge from start state to M1
+    # # start state doesn't connect to I1
+    # M[0,4] = 1 # edge from start state to D1
 
-    M[1,1] = 2 # edge from I0 to I0
-    M[1,2] = 1 # edge from I0 to M1
+    # M[1,1] = 2 # edge from I0 to I0
+    # M[1,2] = 1 # edge from I0 to M1
 
-    for i in range(1, total_columns):
-        M[get_index("M", i),get_index("M", i + 1)] = 1 # Mi to Mi+1
-        M[get_index("M", i),get_index("I", i)] = 1 # Mi to Ii
-        M[get_index("M", i),get_index("D", i + 1)] = 1 # Mi to Di+1
+    # for i in range(1, total_columns):
+    #     M[get_index("M", i),get_index("M", i + 1)] = 1 # Mi to Mi+1
+    #     M[get_index("M", i),get_index("I", i)] = 1 # Mi to Ii
+    #     M[get_index("M", i),get_index("D", i + 1)] = 1 # Mi to Di+1
 
-        M[get_index("I", i),get_index("M", i + 1)] = 1 # Ii to Mi+1
-        M[get_index("I", i),get_index("I", i)] = 2 # Ii to Ii
+    #     M[get_index("I", i),get_index("M", i + 1)] = 1 # Ii to Mi+1
+    #     M[get_index("I", i),get_index("I", i)] = 2 # Ii to Ii
 
-        M[get_index("D", i),get_index("M", i + 1)] = 1 # Di to Mi+1
-        M[get_index("D", i),get_index("D", i + 1)] = 1 # Di to Di+1
+    #     M[get_index("D", i),get_index("M", i + 1)] = 1 # Di to Mi+1
+    #     M[get_index("D", i),get_index("D", i + 1)] = 1 # Di to Di+1
 
-    M[get_index("M", total_columns), num_states - 1] = 1 # Last match state to end state
-    M[get_index("M", total_columns),get_index("I", total_columns)] = 1 # Last match state to last insertion state
+    # M[get_index("M", total_columns), num_states - 1] = 1 # Last match state to end state
+    # M[get_index("M", total_columns),get_index("I", total_columns)] = 1 # Last match state to last insertion state
 
-    M[get_index("I", total_columns), get_index("I", total_columns)] = 2 # Last insertion state to last insertion state
-    M[get_index("I", total_columns), num_states - 1] = 1 # Last insertion state to end state
+    # M[get_index("I", total_columns), get_index("I", total_columns)] = 2 # Last insertion state to last insertion state
+    # M[get_index("I", total_columns), num_states - 1] = 1 # Last insertion state to end state
 
-    M[get_index("D", total_columns), num_states - 1] = 1 # Last deletion state to end state
+    # M[get_index("D", total_columns), num_states - 1] = 1 # Last deletion state to end state
 
     for current_column in output_hmm:
         # print("current column: " + str(current_column))
@@ -446,21 +474,28 @@ def get_matrices(output_hmm, input_dir, backbone_alignment, output_prefix):
             P[get_index("I", current_column), letter_index] = output_hmm[current_column]["insertion"][letter_index]
             # DEBUG: this is the problem
         T[get_index("I", current_column),get_index("I", current_column)] = output_hmm[current_column]["insert_loop"] # Ii to Ii
+        M[get_index("I", current_column),get_index("I", current_column)] = 2
         T[get_index("M", current_column),get_index("I", current_column)] = output_hmm[current_column]["self_match_to_insert"]# Mi to Ii
+        M[get_index("M", current_column),get_index("I", current_column)] = 1
         for current_transition_destination_column in output_hmm[current_column]["transition"]:
             current_transition_probabilities = output_hmm[current_column]["transition"][current_transition_destination_column]
             # these transitions are always valid
             T[get_index("M", current_column),get_index("M", current_transition_destination_column)] = current_transition_probabilities[0] # Mi to Mi+1
+            M[get_index("M", current_column),get_index("M", current_transition_destination_column)] = 1
             T[get_index("I", current_column),get_index("M", current_transition_destination_column)] = current_transition_probabilities[3] # Ii to Mi+1
+            M[get_index("I", current_column),get_index("M", current_transition_destination_column)] = 1
 
             # this transition isn't valid on the 0th column(the column before the first column)  since D0 doesn't exist
             if(current_column != 0):
                 T[get_index("D", current_column),get_index("M", current_transition_destination_column)] = current_transition_probabilities[5] # Di to Mi+1
+                M[get_index("D", current_column),get_index("M", current_transition_destination_column)] = 1
             # this transition is only valid if it's not going to the end state. End state is techincially a match state in this scheme
             if(current_transition_destination_column != total_columns + 1):
                 T[get_index("M", current_column),get_index("D", current_transition_destination_column)] = current_transition_probabilities[2] # Mi to Di+1
+                M[get_index("M", current_column),get_index("D", current_transition_destination_column)] = 1
                 if(current_column != 0):
                     T[get_index("D", current_column),get_index("D", current_transition_destination_column)] = current_transition_probabilities[6] # Di to Di+1
+                    M[get_index("D", current_column),get_index("D", current_transition_destination_column)] = 1
 
     # print(T)
     # print(M)
@@ -862,13 +897,14 @@ def create_mappings_helper(input_fasta_filenames, backbone_alignment):
         match_state_mappings[current_hmm_index] = cumulative_mapping
 
     for mapping_index,mapping in match_state_mappings.items():
+        pp.pprint(mapping)
         max_match_state_index = -1
         match_state_sum = 0
         for backbone_index,match_state_index in mapping.items():
             if(match_state_index > max_match_state_index):
                 max_match_state_index = match_state_index
             match_state_sum += match_state_index
-        assert match_state_sum == ((max_match_state_index * (max_match_state_index + 1)) / 2)
+        assert match_state_sum == (max_match_state_index * (max_match_state_index + 1) / 2)
         # DEBUG TODO: comeback to this
         # DEBUG TODO: second note i think this is correct now
         match_state_mappings[mapping_index][total_columns + 1] = max_match_state_index + 1

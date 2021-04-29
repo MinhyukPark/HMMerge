@@ -162,17 +162,17 @@ def test_merge_5_insertion_1_fragment_5_subsets_0():
     output_prefix = TEMP_OUTPUT_PREFIX + test_suffix
     merged_alignment = main.merge_hmms_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix, True)
     assert merged_alignment == {
-        "fragment": "tttAAAAAtt",
-        "s1":  "---AAAAA--",
-        "s2":  "---AAAAA--",
-        "s3":  "---AAAAA--",
-        "s4":  "---AAAAA--",
-        "s5":  "---AAAAA--",
-        "s6":  "---AAAAA--",
-        "s7":  "---AAAAA--",
-        "s8":  "---AAAAA--",
-        "s9":  "---AAAAA--",
-        "s10": "---AAAAA--",
+        "fragment": "AAtttttAAA",
+        "s1":  "AA-----AAA",
+        "s2":  "AA-----AAA",
+        "s3":  "AA-----AAA",
+        "s4":  "AA-----AAA",
+        "s5":  "AA-----AAA",
+        "s6":  "AA-----AAA",
+        "s7":  "AA-----AAA",
+        "s8":  "AA-----AAA",
+        "s9":  "AA-----AAA",
+        "s10": "AA-----AAA",
     }
 
 def test_merge_1_insertion_2_fragments_2_subsets_0():
