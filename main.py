@@ -207,13 +207,20 @@ def run_viterbi(adjacency_matrices_dict, emission_probabilities_dict, transition
                     #     emitted_all_letters = True
                 else:
                     # it's not an emission state
+                    # DEBUG NONE
                     max_value = -1
                     for search_state_index in range(state_index):
                         current_value = lookup_table[sequence_index,search_state_index] * transition_probabilities[search_state_index,state_index]
                         if(current_value > max_value):
                             max_value = current_value
                             backtrace_table[sequence_index,state_index] = (sequence_index,search_state_index)
-                    lookup_table[sequence_index,state_index] = max_value
+                    # DEBUG: there should never be acase where we are in the begin state but have advanced in the sequence
+                    # it should have taken deletion states
+                    if(state_index == 0):
+                        backtrace_table[sequence_index,state_index] = (-2,-2)
+                        lookup_table[sequence_index,state_index] = 0
+                    else:
+                        lookup_table[sequence_index,state_index] = max_value
 
         readable_table = np.around(lookup_table, decimals=3)
         for state_index in range(len(emission_probabilities)):
