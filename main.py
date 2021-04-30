@@ -14,7 +14,7 @@ from pyhmmer.plan7 import HMM,HMMFile
 pp = pprint.PrettyPrinter(indent=4)
 np.set_printoptions(threshold=np.inf)
 
-
+DEBUG = False
 
 @click.command()
 @click.option("--input-dir", required=True, type=click.Path(exists=True), help="The input temp root dir of sepp that contains all the HMMs")
@@ -22,7 +22,10 @@ np.set_printoptions(threshold=np.inf)
 @click.option("--fragmentary-sequence-file", required=True, type=click.Path(exists=True), help="The input fragmentary sequence file to SEPP")
 @click.option("--output-prefix", required=True, type=click.Path(), help="Output prefix")
 @click.option("--build", required=False, is_flag=True, help="Whether to run hmmbuild. If yes, the input_dir should contain files of the form input_i.fasta")
-def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, build):
+@click.option("--debug", required=False, is_flag=True, help="Whether to run in debug mode or not")
+def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, build, debug):
+    if(debug):
+        DEBUG = True
     merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, build)
 
 def custom_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix):
@@ -76,7 +79,7 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
         # with np.printoptions(suppress=True, linewidth=np.inf):
             # print(transition_probabilities)
         print("starting viterbi")
-        aligned_sequences_dict[fragmentary_sequence_record.id] = run_viterbi_log(adjacency_matrix, np.log2(emission_probabilities), np.log2(transition_probabilities), alphabet, fragmentary_sequence)
+        aligned_sequences_dict[fragmentary_sequence_record.id] = run_viterbi_log_vectorized(adjacency_matrix, np.log2(emission_probabilities), np.log2(transition_probabilities), alphabet, fragmentary_sequence)
     # pp.pprint(adjacency_matrices_dict)
     # pp.pprint(emission_probabilities_dict)
     # pp.pprint(transition_probabilities_dict)
@@ -180,6 +183,118 @@ def get_merged_alignments(aligned_sequences_dict, backbone_alignment):
 
 #         aligned_sequences[current_fragmentary_sequence_id] = current_aligned_sequence
 #     return aligned_sequences
+
+
+def run_viterbi_log_vectorized(adjacency_matrix, emission_probabilities, transition_probabilities, alphabet, fragmentary_sequence):
+    backtraced_states_dict = {}
+    aligned_sequences_dict = {}
+
+    backtraced_states = []
+    aligned_sequence = ""
+    current_fragmentary_sequence = fragmentary_sequence
+    lookup_table = np.zeros((len(current_fragmentary_sequence) + 1, len(emission_probabilities)))
+    lookup_table.fill(np.NINF)
+    backtrace_table = np.empty(lookup_table.shape, dtype=object)
+    backtrace_table.fill((-3,-3))
+    lookup_table[0,0] = 0
+    backtrace_table[0,0] = (-1,-1)
+    num_states = len(emission_probabilities)
+    # [0,j] should be -inf but i'm making everything -inf in the initilazation
+    for state_index in range(len(emission_probabilities)):
+        if(state_index % 300 == 0):
+            print("state index: " + str(state_index))
+        for sequence_index in range(len(current_fragmentary_sequence) + 1):
+            if(state_index == 0 and sequence_index == 0):
+                # this is already handled by the base case
+                continue
+            if(np.sum(emission_probabilities[state_index]) > np.NINF):
+                # it's an emission state
+                lookup_add_transition = np.add(lookup_table[sequence_index-1,:state_index+1], transition_probabilities[:state_index+1,state_index])
+                max_lookup_add_transition_index = np.argmax(lookup_add_transition)
+                max_lookup_add_transition_value = lookup_add_transition[max_lookup_add_transition_index]
+                current_emission_probability = emission_probabilities[state_index,alphabet.index(current_fragmentary_sequence[sequence_index - 1])]
+                if(sequence_index == 0):
+                    # this means emitting an empty sequence which has a zero percent chance
+                    current_emission_probability = np.NINF
+                backtrace_table[sequence_index,state_index] = (sequence_index - 1, max_lookup_add_transition_index)
+                lookup_table[sequence_index,state_index] = current_emission_probability + max_lookup_add_transition_value
+                if(DEBUG):
+                    for search_state_index in range(state_index + 1):
+                        if(adjacency_matrix[search_state_index,state_index] == 0):
+                            if(transition_probabilities[search_state_index,state_index] != np.NINF):
+                                raise Exception("No edge but transition probability exists")
+                            continue
+            else:
+                if(state_index == 0):
+                    backtrace_table[sequence_index,state_index] = (-2,-2)
+                    lookup_table[sequence_index,state_index] = np.NINF
+                else:
+                    lookup_add_transition = np.add(lookup_table[sequence_index,:state_index], transition_probabilities[:state_index,state_index])
+                    max_lookup_add_transition_index = np.argmax(lookup_add_transition)
+                    max_lookup_add_transition_value = lookup_add_transition[max_lookup_add_transition_index]
+                    backtrace_table[sequence_index,state_index] = (sequence_index, max_lookup_add_transition_index)
+                    lookup_table[sequence_index,state_index] = max_lookup_add_transition_value
+                if(DEBUG):
+                    for search_state_index in range(state_index):
+                        if(adjacency_matrix[search_state_index,state_index] == 0):
+                            if(transition_probabilities[search_state_index,state_index] != np.NINF):
+                                raise Exception("No edge but transition probability exists")
+                            continue
+    if(DEBUG):
+        readable_table = np.around(lookup_table, decimals=3)
+        for state_index in range(len(emission_probabilities)):
+            pp.pprint(readable_table[:,state_index])
+            pp.pprint(transition_probabilities[state_index,:])
+        pp.ppirint(backtrace_table)
+        with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
+            print("lookup table")
+            print(lookup_table)
+        with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
+            print("backtrace table")
+            print(backtrace_table)
+        with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
+            print("transition probabilities")
+            print(transition_probabilities)
+        with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
+            print("emission probabilities")
+            print(emission_probabilities)
+
+    current_position = (len(current_fragmentary_sequence),len(emission_probabilities) - 1)
+    while(current_position != (-1,-1)):
+        if(current_position == (-2,-2)):
+            raise Exception("-2-2 state")
+        if(current_position == (-3,-3)):
+            raise Exception("-3-3 state")
+        # print("tracing back current positions")
+        # pp.pprint(current_position)
+        current_sequence_index = current_position[0]
+        current_state = current_position[1]
+
+        backtraced_states.append(current_state)
+        current_position = backtrace_table[current_position]
+        if(np.sum(emission_probabilities[current_state]) > np.NINF):
+            # current position is already the previous position here
+            previous_state_in_sequence = current_position[1]
+            if(DEBUG):
+                assert previous_state_in_sequence <= current_state
+                assert transition_probabilities[previous_state_in_sequence][current_state] > np.NINF
+                assert adjacency_matrix[previous_state_in_sequence][current_state] > 0
+            if(adjacency_matrix[previous_state_in_sequence][current_state] == 2 or is_insertion(current_state)):
+                # print("insertion in fragment")
+                aligned_sequence += current_fragmentary_sequence[current_sequence_index - 1].lower()
+            elif(adjacency_matrix[previous_state_in_sequence][current_state] == 1):
+                aligned_sequence += current_fragmentary_sequence[current_sequence_index - 1].upper()
+            else:
+                raise Exception("Illegal transition")
+        elif(current_state != 0 and current_state != len(emission_probabilities) - 1):
+            aligned_sequence += "-"
+
+    backtraced_states = backtraced_states[::-1]
+    aligned_sequence = aligned_sequence[::-1]
+    # pp.pprint(backtraced_states)
+    # pp.pprint(aligned_sequence)
+    return aligned_sequence
+
 
 def run_viterbi_log(adjacency_matrix, emission_probabilities, transition_probabilities, alphabet, fragmentary_sequence):
     backtraced_states_dict = {}
