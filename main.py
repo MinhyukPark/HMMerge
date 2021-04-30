@@ -76,7 +76,7 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
         # with np.printoptions(suppress=True, linewidth=np.inf):
             # print(transition_probabilities)
         print("starting viterbi")
-        aligned_sequences_dict[fragmentary_sequence_record.id] = run_viterbi_log(adjacency_matrix, emission_probabilities, transition_probabilities, alphabet, fragmentary_sequence)
+        aligned_sequences_dict[fragmentary_sequence_record.id] = run_viterbi_log(adjacency_matrix, np.log2(emission_probabilities), np.log2(transition_probabilities), alphabet, fragmentary_sequence)
     # pp.pprint(adjacency_matrices_dict)
     # pp.pprint(emission_probabilities_dict)
     # pp.pprint(transition_probabilities_dict)
@@ -206,9 +206,9 @@ def run_viterbi_log(adjacency_matrix, emission_probabilities, transition_probabi
             if(state_index == 0 and sequence_index == 0):
                 # this is already handled by the base case
                 continue
-            if(np.sum(emission_probabilities[state_index]) > 0):
+            if(np.sum(emission_probabilities[state_index]) > np.NINF):
                 # it's an emission state
-                current_emission_probability = np.log2(emission_probabilities[state_index,alphabet.index(current_fragmentary_sequence[sequence_index - 1])])
+                current_emission_probability = emission_probabilities[state_index,alphabet.index(current_fragmentary_sequence[sequence_index - 1])]
                 if(sequence_index == 0):
                     # this means emitting an empty sequence which has a zero percent chance
                     current_emission_probability = np.NINF
@@ -216,15 +216,16 @@ def run_viterbi_log(adjacency_matrix, emission_probabilities, transition_probabi
 
                 for search_state_index in range(state_index + 1):
                     if(adjacency_matrix[search_state_index,state_index] == 0):
-                        if(transition_probabilities[search_state_index,state_index] != 0):
+                        if(transition_probabilities[search_state_index,state_index] != np.NINF):
                             raise Exception("No edge but transition probability exists")
                         continue
                     else:
                         current_value = lookup_table[sequence_index - 1,search_state_index]
-                        if(transition_probabilities[search_state_index,state_index] == 0):
+                        if(transition_probabilities[search_state_index,state_index] == np.NINF):
+                        # if(transition_probabilities[search_state_index,state_index] == 0):
                             current_value = np.NINF
                         else:
-                            current_value += np.log2(transition_probabilities[search_state_index,state_index])
+                            current_value += transition_probabilities[search_state_index,state_index]
                         if(current_value > max_value):
                             max_value = current_value
                             backtrace_table[sequence_index,state_index] = (sequence_index - 1,search_state_index)
@@ -238,15 +239,16 @@ def run_viterbi_log(adjacency_matrix, emission_probabilities, transition_probabi
                 max_value = np.NINF
                 for search_state_index in range(state_index):
                     if(adjacency_matrix[search_state_index,state_index] == 0):
-                        if(transition_probabilities[search_state_index,state_index] != 0):
+                        if(transition_probabilities[search_state_index,state_index] != np.NINF):
                             raise Exception("No edge but transition probability exists")
                         continue
                     else:
                         current_value = lookup_table[sequence_index,search_state_index]
-                        if(transition_probabilities[search_state_index,state_index] == 0):
+                        if(transition_probabilities[search_state_index,state_index] == np.NINF):
+                        # if(transition_probabilities[search_state_index,state_index] == 0):
                             current_value = np.NINF
                         else:
-                            current_value += np.log2(transition_probabilities[search_state_index,state_index])
+                            current_value += transition_probabilities[search_state_index,state_index]
                         if(current_value > max_value):
                             max_value = current_value
                             backtrace_table[sequence_index,state_index] = (sequence_index,search_state_index)
@@ -289,11 +291,11 @@ def run_viterbi_log(adjacency_matrix, emission_probabilities, transition_probabi
 
         backtraced_states.append(current_state)
         current_position = backtrace_table[current_position]
-        if(np.sum(emission_probabilities[current_state]) > 0):
+        if(np.sum(emission_probabilities[current_state]) > np.NINF):
             # current position is already the previous position here
             previous_state_in_sequence = current_position[1]
             assert previous_state_in_sequence <= current_state
-            assert transition_probabilities[previous_state_in_sequence][current_state] > 0
+            assert transition_probabilities[previous_state_in_sequence][current_state] > np.NINF
             # print(current_state)
             # print(previous_state_in_sequence)
             assert adjacency_matrix[previous_state_in_sequence][current_state] > 0
