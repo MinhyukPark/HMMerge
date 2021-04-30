@@ -1,5 +1,6 @@
 import glob
 import math
+from multiprocessing import Pool
 import numpy as np
 import numpy.testing as npt
 import os
@@ -16,17 +17,39 @@ np.set_printoptions(threshold=np.inf)
 
 DEBUG = False
 
+def run_align_wrapper(args):
+    return run_align(*args)
+
+def run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix):
+    output_hmm = get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)
+    # print("the output hmm for sequence " + str(fragmentary_sequence_id) + " is")
+    # pp.pprint(mappings)
+    adjacency_matrix,emission_probabilities,transition_probabilities,alphabet = get_matrices(output_hmm, input_dir, backbone_alignment, output_prefix)
+    print("adjacency matrix for sequence " + str(fragmentary_sequence_id) + " is")
+    # with np.printoptions(suppress=True, linewidth=np.inf):
+        # print(adjacency_matrix)
+    # print(adjacency_matrix[len(adjacency_matrix) - 2,:])
+    print("emission probabilities for sequence " + str(fragmentary_sequence_id) + " is")
+    # with np.printoptions(suppress=True, linewidth=np.inf):
+        # print(emission_probabilities)
+    print("tranistion probabilities for sequence " + str(fragmentary_sequence_id) + " is")
+    # with np.printoptions(suppress=True, linewidth=np.inf):
+        # print(transition_probabilities)
+    print("starting viterbi")
+    return fragmentary_sequence_id,run_viterbi_log_vectorized(adjacency_matrix, np.log2(emission_probabilities), np.log2(transition_probabilities), alphabet, fragmentary_sequence)
+
 @click.command()
 @click.option("--input-dir", required=True, type=click.Path(exists=True), help="The input temp root dir of sepp that contains all the HMMs")
 @click.option("--backbone-alignment", required=True, type=click.Path(exists=True), help="The input backbone alignment")
 @click.option("--fragmentary-sequence-file", required=True, type=click.Path(exists=True), help="The input fragmentary sequence file to SEPP")
 @click.option("--output-prefix", required=True, type=click.Path(), help="Output prefix")
+@click.option("--num-processes", required=False, type=int, default=1, help="Number of Processes")
 @click.option("--build", required=False, is_flag=True, help="Whether to run hmmbuild. If yes, the input_dir should contain files of the form input_i.fasta")
 @click.option("--debug", required=False, is_flag=True, help="Whether to run in debug mode or not")
-def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, build, debug):
+def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, num_processes, build, debug):
     if(debug):
         DEBUG = True
-    merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, build)
+    merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, num_processes, build)
 
 def custom_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix):
     mappings = create_custom_mappings(input_dir, backbone_alignment)
@@ -42,7 +65,7 @@ def sepp_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output
     return mappings,bitscores,hmms
 
 
-def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, build):
+def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, build, num_processes):
     mappings = None
     bitscores = None
     aligned_sequences_dict = {}
@@ -60,26 +83,25 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
     # pp.pprint(bitscores)
     # with np.printoptions(suppress=True, linewidth=np.inf):
         # print(bitscores)
+    run_align_args = []
+    if(num_processes > 1):
+        for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
+            fragmentary_sequence = fragmentary_sequence_record.seq
+            fragmentary_sequence_id = fragmentary_sequence_record.id
+            run_align_args.append((input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix))
+        aligned_results = None
 
-    for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
-        fragmentary_sequence = fragmentary_sequence_record.seq
-        fragmentary_sequence_id = fragmentary_sequence_record.id
-        output_hmm = get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)
-        # print("the output hmm for sequence " + str(fragmentary_sequence_id) + " is")
-        # pp.pprint(mappings)
-        adjacency_matrix,emission_probabilities,transition_probabilities,alphabet = get_matrices(output_hmm, input_dir, backbone_alignment, output_prefix)
-        print("adjacency matrix for sequence " + str(fragmentary_sequence_id) + " is")
-        # with np.printoptions(suppress=True, linewidth=np.inf):
-            # print(adjacency_matrix)
-        # print(adjacency_matrix[len(adjacency_matrix) - 2,:])
-        print("emission probabilities for sequence " + str(fragmentary_sequence_id) + " is")
-        # with np.printoptions(suppress=True, linewidth=np.inf):
-            # print(emission_probabilities)
-        print("tranistion probabilities for sequence " + str(fragmentary_sequence_id) + " is")
-        # with np.printoptions(suppress=True, linewidth=np.inf):
-            # print(transition_probabilities)
-        print("starting viterbi")
-        aligned_sequences_dict[fragmentary_sequence_record.id] = run_viterbi_log_vectorized(adjacency_matrix, np.log2(emission_probabilities), np.log2(transition_probabilities), alphabet, fragmentary_sequence)
+        with Pool(processes=num_processes) as pool:
+            aligned_results = pool.map(run_align_wrapper, run_align_args)
+
+        for aligned_result in aligned_results:
+            aligned_sequences_dict[aligned_result[0]] = aligned_result[1]
+    else:
+        for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
+            fragmentary_sequence = fragmentary_sequence_record.seq
+            fragmentary_sequence_id = fragmentary_sequence_record.id
+            aligned_sequences_dict[fragmentary_sequence_id] = run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)[1]
+
     # pp.pprint(adjacency_matrices_dict)
     # pp.pprint(emission_probabilities_dict)
     # pp.pprint(transition_probabilities_dict)
