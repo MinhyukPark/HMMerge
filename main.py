@@ -137,6 +137,12 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
     # pp.pprint(merged_alignment)
     with np.printoptions(suppress=True, linewidth=np.inf):
         print(merged_alignment)
+
+    with open(output_prefix + "HMMerge.aligned.fasta", "w") as f:
+        for merged_aligned_sequence in merged_alignment:
+            f.write(">" + merged_aligned_sequence + "\n")
+            f.write(merged_alignment[merged_aligned_sequence] + "\n")
+
     return merged_alignment
 
 def get_merged_alignments(aligned_sequences_dict, backbone_alignment):
