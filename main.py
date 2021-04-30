@@ -43,46 +43,71 @@ def run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, frag
 @click.option("--backbone-alignment", required=True, type=click.Path(exists=True), help="The input backbone alignment")
 @click.option("--fragmentary-sequence-file", required=True, type=click.Path(exists=True), help="The input fragmentary sequence file to SEPP")
 @click.option("--output-prefix", required=True, type=click.Path(), help="Output prefix")
+@click.option("--input-type", required=True, type=click.Choice(["custom", "sepp", "upp"]), help="The type of input")
 @click.option("--num-processes", required=False, type=int, default=1, help="Number of Processes")
-@click.option("--build", required=False, is_flag=True, help="Whether to run hmmbuild. If yes, the input_dir should contain files of the form input_i.fasta")
 @click.option("--debug", required=False, is_flag=True, help="Whether to run in debug mode or not")
-def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, num_processes, build, debug):
+def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, debug):
     if(debug):
         DEBUG = True
-    merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, num_processes, build)
+    merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes)
 
-def custom_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix):
-    mappings = create_custom_mappings(input_dir, backbone_alignment)
-    build_hmm_profiles(input_dir, mappings, output_prefix)
-    bitscores = get_custom_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix)
-    hmms = get_custom_probabilities(input_dir, backbone_alignment, mappings, bitscores, output_prefix)
-    return mappings,bitscores,hmms
+def custom_helper(input_dir, output_prefix):
+    num_hmms = len(list(glob.glob(input_dir + "/input_*.fasta")))
+    input_profile_files = []
+    input_sequence_files = []
+    for current_hmm_index in range(num_hmms):
+        input_profile_files.append(output_prefix + "/" + str(current_hmm_index) + "-hmmbuild.profile")
+        input_sequence_files.append(input_dir + "/input_" + str(current_hmm_index) + ".fasta")
+    return num_hmms,input_profile_files,input_sequence_files
 
-def sepp_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix):
-    mappings = create_sepp_mappings(input_dir, backbone_alignment)
-    bitscores = get_sepp_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix)
-    hmms = get_sepp_probabilities(input_dir, backbone_alignment, mappings, bitscores, output_prefix)
-    return mappings,bitscores,hmms
+def sepp_helper(input_dir):
+    num_hmms = len(list(glob.glob(input_dir + "/P_*")))
+    input_profile_files = []
+    input_sequence_files = []
+    for current_hmm_index in range(num_hmms):
+        input_profile_files.append(list(glob.glob(input_dir + "/P_" + str(current_hmm_index) + "/A_" + str(current_hmm_index) + "_0/hmmbuild.model.*"))[0])
+        input_sequence_files.append(list(glob.glob(input_dir + "/P_" + str(current_hmm_index) + "/A_" + str(current_hmm_index) + "_0/hmmbuild.input.*.fasta"))[0])
+    return num_hmms,input_profile_files,input_sequence_files
 
+def upp_helper(input_dir):
+    num_hmms = len(list(glob.glob(input_dir + "/P_0/A_*")))
+    input_profile_files = []
+    input_sequence_files = []
+    for current_hmm_index in range(num_hmms):
+        input_profile_files.append(list(glob.glob(input_dir + "/P_0/A_0_" + str(current_hmm_index) + "/hmmbuild.model.*"))[0])
+        input_sequence_files.append(list(glob.glob(input_dir + "/P_0/A_0_" + str(current_hmm_index) + "/hmmbuild.input.*.fasta"))[0])
+    return num_hmms,input_profile_files,input_sequence_files
 
-def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, build, num_processes):
+def generic_helper(input_dir, num_hmms, input_profile_files, input_sequence_files, backbone_alignment, fragmentary_sequence_file, mappings, output_prefix):
+    bitscores = get_bitscores_helper(input_dir, num_hmms, input_profile_files, backbone_alignment, fragmentary_sequence_file, output_prefix)
+    hmms = read_hmms(input_profile_files)
+    return bitscores,hmms
+
+def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes):
     mappings = None
     bitscores = None
     aligned_sequences_dict = {}
     hmms = None
-    if(build):
-        mappings,bitscores,hmms = custom_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix)
-    else:
-        mappings,bitscores,hmms = sepp_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix)
+    num_hmms = None
+    input_profile_files = None
+    input_sequence_files = None
 
-    # print("the mappings are")
-    # pp.pprint(mappings)
-    # with np.printoptions(suppress=True, linewidth=np.inf):
-        # print(mappings)
-    # print("bitscores are")
-    # pp.pprint(bitscores)
-    # with np.printoptions(suppress=True, linewidth=np.inf):
-        # print(bitscores)
+    if(input_type == "custom"):
+        num_hmms,input_profile_files,input_sequence_files = custom_helper(input_dir, output_prefix)
+    elif(input_type == "sepp"):
+        num_hmms,input_profile_files,input_sequence_files = sepp_helper(input_dir)
+    elif(input_type == "upp"):
+        num_hmms,input_profile_files,input_sequence_files = upp_helper(input_dir)
+    else:
+        print(input_type)
+        raise Exception("Unsupported mode")
+    mappings = create_mappings_helper(input_sequence_files, backbone_alignment)
+
+    if(input_type == "custom"):
+        build_hmm_profiles(input_dir, mappings, output_prefix)
+
+    bitscores,hmms = generic_helper(input_dir, num_hmms, input_profile_files, input_sequence_files, backbone_alignment, fragmentary_sequence_file, mappings, output_prefix)
+
     run_align_args = []
     if(num_processes > 1):
         for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
@@ -102,10 +127,6 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
             fragmentary_sequence_id = fragmentary_sequence_record.id
             aligned_sequences_dict[fragmentary_sequence_id] = run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)[1]
 
-    # pp.pprint(adjacency_matrices_dict)
-    # pp.pprint(emission_probabilities_dict)
-    # pp.pprint(transition_probabilities_dict)
-    # aligned_sequences_dict = align_sequences(backtraced_states_dict, fragmentary_sequence_file)
 
     print("aligned sequences are")
     # pp.pprint(aligned_sequences_dict)
@@ -317,241 +338,6 @@ def run_viterbi_log_vectorized(adjacency_matrix, emission_probabilities, transit
     # pp.pprint(aligned_sequence)
     return aligned_sequence
 
-
-def run_viterbi_log(adjacency_matrix, emission_probabilities, transition_probabilities, alphabet, fragmentary_sequence):
-    backtraced_states_dict = {}
-    aligned_sequences_dict = {}
-
-    backtraced_states = []
-    aligned_sequence = ""
-    current_fragmentary_sequence = fragmentary_sequence
-    lookup_table = np.zeros((len(current_fragmentary_sequence) + 1, len(emission_probabilities)))
-    lookup_table.fill(np.NINF)
-    backtrace_table = np.empty(lookup_table.shape, dtype=object)
-    backtrace_table.fill((-3,-3))
-    lookup_table[0,0] = 0
-    backtrace_table[0,0] = (-1,-1)
-    # [0,j] should be -inf but i'm making everything -inf in the initilazation
-    for state_index in range(len(emission_probabilities)):
-        # if(emitted_all_letters):
-        #     break
-        if(state_index % 300 == 0):
-            print("state index: " + str(state_index))
-        for sequence_index in range(len(current_fragmentary_sequence) + 1):
-            # if(emitted_all_letters):
-            #     break
-            if(state_index == 0 and sequence_index == 0):
-                # this is already handled by the base case
-                continue
-            if(np.sum(emission_probabilities[state_index]) > np.NINF):
-                # it's an emission state
-                current_emission_probability = emission_probabilities[state_index,alphabet.index(current_fragmentary_sequence[sequence_index - 1])]
-                if(sequence_index == 0):
-                    # this means emitting an empty sequence which has a zero percent chance
-                    current_emission_probability = np.NINF
-                max_value = np.NINF
-
-                for search_state_index in range(state_index + 1):
-                    if(adjacency_matrix[search_state_index,state_index] == 0):
-                        if(transition_probabilities[search_state_index,state_index] != np.NINF):
-                            raise Exception("No edge but transition probability exists")
-                        continue
-                    else:
-                        current_value = lookup_table[sequence_index - 1,search_state_index]
-                        if(transition_probabilities[search_state_index,state_index] == np.NINF):
-                        # if(transition_probabilities[search_state_index,state_index] == 0):
-                            current_value = np.NINF
-                        else:
-                            current_value += transition_probabilities[search_state_index,state_index]
-                        if(current_value > max_value):
-                            max_value = current_value
-                            backtrace_table[sequence_index,state_index] = (sequence_index - 1,search_state_index)
-                lookup_table[sequence_index,state_index] = current_emission_probability + max_value
-                # if(sequence_index == len(current_fragmentary_sequence) - 1):
-                #     ending_tuple = (sequence_index,state_index)
-                #     emitted_all_letters = True
-            else:
-                # it's not an emission state
-                # DEBUG NONE
-                max_value = np.NINF
-                for search_state_index in range(state_index):
-                    if(adjacency_matrix[search_state_index,state_index] == 0):
-                        if(transition_probabilities[search_state_index,state_index] != np.NINF):
-                            raise Exception("No edge but transition probability exists")
-                        continue
-                    else:
-                        current_value = lookup_table[sequence_index,search_state_index]
-                        if(transition_probabilities[search_state_index,state_index] == np.NINF):
-                        # if(transition_probabilities[search_state_index,state_index] == 0):
-                            current_value = np.NINF
-                        else:
-                            current_value += transition_probabilities[search_state_index,state_index]
-                        if(current_value > max_value):
-                            max_value = current_value
-                            backtrace_table[sequence_index,state_index] = (sequence_index,search_state_index)
-                # DEBUG: there should never be acase where we are in the begin state but have advanced in the sequence
-                # it should have taken deletion states
-                if(state_index == 0):
-                    backtrace_table[sequence_index,state_index] = (-2,-2)
-                    lookup_table[sequence_index,state_index] = np.NINF
-                else:
-                    lookup_table[sequence_index,state_index] = max_value
-
-    # readable_table = np.around(lookup_table, decimals=3)
-    # for state_index in range(len(emission_probabilities)):
-        # pp.pprint(readable_table[:,state_index])
-        # pp.pprint(transition_probabilities[state_index,:])
-    # pp.ppirint(backtrace_table)
-    # with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
-    #     print("lookup table")
-    #     print(lookup_table)
-    # with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
-    #     print("backtrace table")
-    #     print(backtrace_table)
-    # with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
-    #     print("transition probabilities")
-    #     print(transition_probabilities)
-    # with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
-    #     print("emission probabilities")
-    #     print(emission_probabilities)
-
-    current_position = (len(current_fragmentary_sequence),len(emission_probabilities) - 1)
-    while(current_position != (-1,-1)):
-        if(current_position == (-2,-2)):
-            raise Exception("-2-2 state")
-        if(current_position == (-3,-3)):
-            raise Exception("-3-3 state")
-        # print("tracing back current positions")
-        # pp.pprint(current_position)
-        current_sequence_index = current_position[0]
-        current_state = current_position[1]
-
-        backtraced_states.append(current_state)
-        current_position = backtrace_table[current_position]
-        if(np.sum(emission_probabilities[current_state]) > np.NINF):
-            # current position is already the previous position here
-            previous_state_in_sequence = current_position[1]
-            assert previous_state_in_sequence <= current_state
-            assert transition_probabilities[previous_state_in_sequence][current_state] > np.NINF
-            # print(current_state)
-            # print(previous_state_in_sequence)
-            assert adjacency_matrix[previous_state_in_sequence][current_state] > 0
-            if(adjacency_matrix[previous_state_in_sequence][current_state] == 2 or is_insertion(current_state)):
-                # print("insertion in fragment")
-                aligned_sequence += current_fragmentary_sequence[current_sequence_index - 1].lower()
-            elif(adjacency_matrix[previous_state_in_sequence][current_state] == 1):
-                aligned_sequence += current_fragmentary_sequence[current_sequence_index - 1].upper()
-            else:
-                raise Exception("Illegal transition")
-        elif(current_state != 0 and current_state != len(emission_probabilities) - 1):
-            aligned_sequence += "-"
-
-    backtraced_states = backtraced_states[::-1]
-    aligned_sequence = aligned_sequence[::-1]
-    # pp.pprint(backtraced_states)
-    # pp.pprint(aligned_sequence)
-    return aligned_sequence
-
-def run_viterbi(adjacency_matrices_dict, emission_probabilities_dict, transition_probabilities_dict, alphabet, fragmentary_sequence_file):
-    backtraced_states_dict = {}
-    aligned_sequences_dict = {}
-    for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
-        backtraced_states = []
-        aligned_sequence = ""
-        current_fragmentary_sequence = fragmentary_sequence_record.seq
-        current_fragmentary_sequence_id = fragmentary_sequence_record.id
-        adjacency_matrix = adjacency_matrices_dict[current_fragmentary_sequence_id]
-        emission_probabilities = emission_probabilities_dict[current_fragmentary_sequence_id]
-        transition_probabilities = transition_probabilities_dict[current_fragmentary_sequence_id]
-        lookup_table = np.zeros((len(current_fragmentary_sequence) + 1, len(emission_probabilities)))
-        backtrace_table = np.empty(lookup_table.shape, dtype=object)
-        lookup_table[0,0] = 1
-        backtrace_table[0,0] = (-1,-1)
-        # [0,j] should be 0 but i'm making everything zero in the initilazation
-        for state_index in range(len(emission_probabilities)):
-            # if(emitted_all_letters):
-            #     break
-            for sequence_index in range(len(current_fragmentary_sequence) + 1):
-                # if(emitted_all_letters):
-                #     break
-                if(state_index == 0 and sequence_index == 0):
-                    # this is already handled by the base case
-                    continue
-                if(np.sum(emission_probabilities[state_index]) > 0):
-                    # it's an emission state
-                    current_emission_probability = emission_probabilities[state_index,alphabet.index(current_fragmentary_sequence[sequence_index - 1])]
-                    if(sequence_index == 0):
-                        # this means emitting an empty sequence which has a zero percent chance
-                        current_emission_probability = 0
-                    max_value = -1
-                    for search_state_index in range(state_index + 1):
-                        current_value = lookup_table[sequence_index - 1,search_state_index] * transition_probabilities[search_state_index,state_index]
-                        if(current_value > max_value):
-                            max_value = current_value
-                            backtrace_table[sequence_index,state_index] = (sequence_index - 1,search_state_index)
-                    lookup_table[sequence_index,state_index] = current_emission_probability * max_value
-                    # if(sequence_index == len(current_fragmentary_sequence) - 1):
-                    #     ending_tuple = (sequence_index,state_index)
-                    #     emitted_all_letters = True
-                else:
-                    # it's not an emission state
-                    # DEBUG NONE
-                    max_value = -1
-                    for search_state_index in range(state_index):
-                        current_value = lookup_table[sequence_index,search_state_index] * transition_probabilities[search_state_index,state_index]
-                        if(current_value > max_value):
-                            max_value = current_value
-                            backtrace_table[sequence_index,state_index] = (sequence_index,search_state_index)
-                    # DEBUG: there should never be acase where we are in the begin state but have advanced in the sequence
-                    # it should have taken deletion states
-                    if(state_index == 0):
-                        backtrace_table[sequence_index,state_index] = (-2,-2)
-                        lookup_table[sequence_index,state_index] = 0
-                    else:
-                        lookup_table[sequence_index,state_index] = max_value
-
-        # readable_table = np.around(lookup_table, decimals=3)
-        # for state_index in range(len(emission_probabilities)):
-            # pp.pprint(readable_table[:,state_index])
-            # pp.pprint(transition_probabilities[state_index,:])
-        # pp.pprint(backtrace_table)
-
-        current_position = (len(current_fragmentary_sequence),len(emission_probabilities) - 1)
-        while(current_position != (-1,-1)):
-            # print("tracing back current positions")
-            # pp.pprint(current_position)
-            current_sequence_index = current_position[0]
-            current_state = current_position[1]
-
-            backtraced_states.append(current_state)
-            current_position = backtrace_table[current_position]
-            if(np.sum(emission_probabilities[current_state]) > 0):
-                # current position is already the previous position here
-                previous_state_in_sequence = current_position[1]
-                assert previous_state_in_sequence <= current_state
-                assert transition_probabilities[previous_state_in_sequence][current_state] > 0
-                # print(current_state)
-                # print(previous_state_in_sequence)
-                assert adjacency_matrix[previous_state_in_sequence][current_state] > 0
-                if(adjacency_matrix[previous_state_in_sequence][current_state] == 2 or is_insertion(current_state)):
-                    # print("insertion in fragment")
-                    aligned_sequence += current_fragmentary_sequence[current_sequence_index - 1].lower()
-                elif(adjacency_matrix[previous_state_in_sequence][current_state] == 1):
-                    aligned_sequence += current_fragmentary_sequence[current_sequence_index - 1].upper()
-                else:
-                    raise Exception("Illegal transition")
-            elif(current_state != 0 and current_state != len(emission_probabilities) - 1):
-                aligned_sequence += "-"
-
-        backtraced_states = backtraced_states[::-1]
-        aligned_sequence = aligned_sequence[::-1]
-        # pp.pprint(backtraced_states)
-        # pp.pprint(aligned_sequence)
-        backtraced_states_dict[current_fragmentary_sequence_id] = backtraced_states
-        aligned_sequences_dict[current_fragmentary_sequence_id] = aligned_sequence
-    return aligned_sequences_dict
-
-
 def get_matrices(output_hmm, input_dir, backbone_alignment, output_prefix):
     alphabet = ["A", "C", "G", "T"]
     backbone_records = SeqIO.to_dict(SeqIO.parse(backbone_alignment, "fasta"))
@@ -703,19 +489,10 @@ def build_hmm_profiles(input_dir, mappings, output_prefix):
                 current_output_file = output_prefix + "/" + str(current_hmm_index) + "-hmmbuild.profile"
                 subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmbuild", "--cpu", "1", "--dna", "--ere", "0.59", "--symfrac", "0.0", "--informat", "afa", current_output_file, current_input_file], stdout=stdout_f, stderr=stderr_f)
 
-def get_custom_probabilities(input_dir, backbone_alignment, mappings, bitscores, output_prefix):
-    backbone_records = SeqIO.to_dict(SeqIO.parse(backbone_alignment, "fasta"))
-    total_columns = None
-    for record in backbone_records:
-        total_columns = len(backbone_records[record].seq)
-        break
-    num_hmms = len(mappings)
+def read_hmms(input_profile_files):
     hmms = {}
-
-
-    for current_hmm_index in range(num_hmms):
-        current_input_file = output_prefix + "/" + str(current_hmm_index) + "-hmmbuild.profile"
-        current_hmm = None
+    for current_hmm_index,current_input_file in enumerate(input_profile_files):
+        current_hmm =None
         with HMMFile(current_input_file) as hmm_f:
             current_hmm = next(hmm_f)
 
@@ -727,26 +504,6 @@ def get_custom_probabilities(input_dir, backbone_alignment, mappings, bitscores,
             "insertion": insertion_probabilities,
             "transition": transition_probabilities,
         }
-    return hmms
-
-def get_sepp_probabilities(input_dir, backbone_alignment, mappings, bitscores, output_prefix):
-    num_hmms = len(mappings)
-    hmms = {}
-
-    for current_hmm_index in range(num_hmms):
-        for current_input_file in glob.glob(input_dir + "/P_" + str(current_hmm_index) + "/A_" + str(current_hmm_index) + "_0/hmmbuild.model.*"):
-            current_hmm =None
-            with HMMFile(current_input_file) as hmm_f:
-                current_hmm = next(hmm_f)
-
-            match_probabilities = np.asarray(current_hmm.mat)
-            insertion_probabilities = np.asarray(current_hmm.ins)
-            transition_probabilities = np.asarray(current_hmm.trans)
-            hmms[current_hmm_index] = {
-                "match": match_probabilities,
-                "insertion": insertion_probabilities,
-                "transition": transition_probabilities,
-            }
     return hmms
 
 def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix):
@@ -932,29 +689,13 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
         # print(-np.log(output_hmm[0][]["transition"]))
     return output_hmm
 
-def get_custom_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix):
-    num_hmms = len(list(glob.glob(input_dir + "/input_*.fasta")))
-    for current_hmm_index in range(num_hmms):
-        current_input_file = output_prefix + "/" + str(current_hmm_index) + "-hmmbuild.profile"
+def get_bitscores_helper(input_dir, num_hmms, input_profile_files, backbone_alignment, fragmentary_sequence_file, output_prefix):
+    hmm_bitscores = {}
+    for current_hmm_index,current_input_file in enumerate(input_profile_files):
         with open(output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.out", "w") as stdout_f:
             with open(output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.err", "w") as stderr_f:
                 current_search_file = output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.output"
                 subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmsearch", "--noali", "--cpu", "1", "-o", current_search_file, "-E", "99999999999", "--max", current_input_file,fragmentary_sequence_file], stdout=stdout_f, stderr=stderr_f)
-    return get_bitscores_helper(input_dir, num_hmms, backbone_alignment, fragmentary_sequence_file, output_prefix)
-
-def get_sepp_bitscores(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix):
-    num_hmms = len(list(glob.glob(input_dir + "/P_*")))
-    for current_hmm_index in range(num_hmms):
-        current_input_file = list(glob.glob(input_dir + "/P_" + str(current_hmm_index) + "/A_" + str(current_hmm_index) + "_0/hmmbuild.model.*"))[0]
-        with open(output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.out", "w") as stdout_f:
-            with open(output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.err", "w") as stderr_f:
-                current_search_file = output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.output"
-                subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmsearch", "--noali", "--cpu", "1", "-o", current_search_file, "-E", "99999999999", "--max", current_input_file, fragmentary_sequence_file], stdout=stdout_f, stderr=stderr_f)
-
-    return get_bitscores_helper(input_dir, num_hmms, backbone_alignment, fragmentary_sequence_file, output_prefix)
-
-def get_bitscores_helper(input_dir, num_hmms, backbone_alignment, fragmentary_sequence_file, output_prefix):
-    hmm_bitscores = {}
 
     for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
         current_fragmentary_sequence = fragmentary_sequence_record.seq
@@ -976,22 +717,6 @@ def get_bitscores_helper(input_dir, num_hmms, backbone_alignment, fragmentary_se
                         current_sequence_id_encountered = True
         hmm_bitscores[fragmentary_sequence_record.id] = current_hmm_bitscores
     return hmm_bitscores
-
-def create_custom_mappings(input_dir, backbone_alignment):
-    num_hmms = len(list(glob.glob(input_dir + "/input_*.fasta")))
-    input_fasta_filenames = []
-    for current_hmm_index in range(num_hmms):
-        current_input_file = input_dir + "/input_" + str(current_hmm_index) + ".fasta"
-        input_fasta_filenames.append(current_input_file)
-    return create_mappings_helper(input_fasta_filenames, backbone_alignment)
-
-def create_sepp_mappings(input_dir, backbone_alignment):
-    num_hmms = len(list(glob.glob(input_dir + "/P_*")))
-    input_fasta_filenames = []
-    for current_hmm_index in range(num_hmms):
-        current_input_file = list(glob.glob(input_dir + "/P_" + str(current_hmm_index) + "/A_" + str(current_hmm_index) + "_0/hmmbuild.input.*.fasta"))[0]
-        input_fasta_filenames.append(current_input_file)
-    return create_mappings_helper(input_fasta_filenames, backbone_alignment)
 
 def create_mappings_helper(input_fasta_filenames, backbone_alignment):
     num_hmms = len(input_fasta_filenames)
