@@ -27,26 +27,27 @@ def merge_1_insertion_10_fragment_5_subsets_6():
     for num_threads in range(1, 12):
         merged_alignment = main.merge_hmms_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix, "custom", num_threads)
         assert merged_alignment == {
-            's1':        'AAAAA---------------------------------------------',
-            's2':        'AAAAA---------------------------------------------',
-            's3':        'AAAAA---------------------------------------------',
-            's4':        'AAAAA---------------------------------------------',
-            's5':        'AAAAA---------------------------------------------',
-            's6':        'AAAAA---------------------------------------------',
-            's7':        'AAAAA---------------------------------------------',
-            's8':        'AAAAA---------------------------------------------',
-            's9':        'AAAAA---------------------------------------------',
-            's10':       'AAAAA---------------------------------------------',
-            'fragment0': 'AAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaat',
-            'fragment1': 'AAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaat',
-            'fragment2': 'AAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaat',
-            'fragment3': 'AAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaat',
-            'fragment4': 'AAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaat',
-            'fragment5': 'AAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaat',
-            'fragment6': 'AAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaat',
-            'fragment7': 'AAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaat',
-            'fragment8': 'AAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaat',
-            'fragment9': 'AAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaat'
+            "s1":        "AAAAA---------------------------------------------",
+            "s2":        "AAAAA---------------------------------------------",
+            "s3":        "AAAAA---------------------------------------------",
+            "s4":        "AAAAA---------------------------------------------",
+            "s5":        "AAAAA---------------------------------------------",
+            "s6":        "AAAAA---------------------------------------------",
+            "s7":        "AAAAA---------------------------------------------",
+            "s8":        "AAAAA---------------------------------------------",
+            "s9":        "AAAAA---------------------------------------------",
+            "s10":       "AAAAA---------------------------------------------",
+            "fragment0": "AAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaat",
+            "fragment1": "AAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaat",
+            "fragment2": "AAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaat",
+            "fragment3": "AAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaat",
+            "fragment4": "AAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaat",
+            "fragment5": "AAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaat",
+            "fragment6": "AAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaat",
+            "fragment7": "AAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaat",
+            "fragment8": "AAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaat",
+            "fragment9": "AAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaat"
+            # "backbone_indices": [1, 2, 3, 4, 5, ],
         }
 
 def test_merge_1_insertion_1_fragment_5_subsets_0():
@@ -67,6 +68,7 @@ def test_merge_1_insertion_1_fragment_5_subsets_0():
         "s8":  "-AAAAA",
         "s9":  "-AAAAA",
         "s10": "-AAAAA",
+        "backbone_indices": ["I", 1, 2, 3, 4, 5],
     }
 
 def test_merge_1_insertion_1_fragment_5_subsets_1():
@@ -87,6 +89,7 @@ def test_merge_1_insertion_1_fragment_5_subsets_1():
         "s8":  "A-AAAA",
         "s9":  "A-AAAA",
         "s10": "A-AAAA",
+        "backbone_indices": [1, "I", 2, 3, 4, 5],
     }
 def test_merge_1_insertion_1_fragment_5_subsets_2():
     test_root = "./test/merge_test/merge_1_insertion_1_fragment_5_subsets_2/"
@@ -106,6 +109,7 @@ def test_merge_1_insertion_1_fragment_5_subsets_2():
         "s8":  "AA-AAA",
         "s9":  "AA-AAA",
         "s10": "AA-AAA",
+        "backbone_indices": [1, 2, "I", 3, 4, 5],
     }
 def test_merge_1_insertion_1_fragment_5_subsets_3():
     test_root = "./test/merge_test/merge_1_insertion_1_fragment_5_subsets_3/"
@@ -125,6 +129,7 @@ def test_merge_1_insertion_1_fragment_5_subsets_3():
         "s8":  "AAA-AA",
         "s9":  "AAA-AA",
         "s10": "AAA-AA",
+        "backbone_indices": [1, 2, 3, "I", 4, 5],
     }
 def test_merge_1_insertion_1_fragment_5_subsets_4():
     test_root = "./test/merge_test/merge_1_insertion_1_fragment_5_subsets_4/"
@@ -144,6 +149,7 @@ def test_merge_1_insertion_1_fragment_5_subsets_4():
         "s8":  "AAAA-A",
         "s9":  "AAAA-A",
         "s10": "AAAA-A",
+        "backbone_indices": [1, 2, 3, 4, "I", 5],
     }
 def test_merge_1_insertion_1_fragment_5_subsets_5():
     test_root = "./test/merge_test/merge_1_insertion_1_fragment_5_subsets_5/"
@@ -163,6 +169,7 @@ def test_merge_1_insertion_1_fragment_5_subsets_5():
         "s8":  "AAAAA-",
         "s9":  "AAAAA-",
         "s10": "AAAAA-",
+        "backbone_indices": [1, 2, 3, 4, 5, "I"],
     }
 
 def test_merge_7_insertion_1_fragment_5_subsets_0():
@@ -183,6 +190,7 @@ def test_merge_7_insertion_1_fragment_5_subsets_0():
         "s8":  "-------AAAAA",
         "s9":  "-------AAAAA",
         "s10": "-------AAAAA",
+        "backbone_indices": ["I", "I", "I", "I", "I", "I", "I", 1, 2, 3, 4, 5],
     }
 
 def test_merge_5_insertion_1_fragment_5_subsets_0():
@@ -203,6 +211,7 @@ def test_merge_5_insertion_1_fragment_5_subsets_0():
         "s8":  "AA-----AAA",
         "s9":  "AA-----AAA",
         "s10": "AA-----AAA",
+        "backbone_indices": [1, 2, "I", "I", "I", "I", "I", 3, 4, 5],
     }
 
 def test_merge_1_insertion_2_fragments_2_subsets_0():
@@ -222,6 +231,7 @@ def test_merge_1_insertion_2_fragments_2_subsets_0():
         "s6":         "A-AAA-AAAA",
         "s7":         "A-AAA-AAAA",
         "s8":         "A-AAA-AAAA",
+        "backbone_indices": [1, "I", 2, 3, 4, "I", 5, 6, 7, 8],
     }
 
 def test_merge_1_insertion_2_fragments_2_subsets_1():
@@ -241,6 +251,7 @@ def test_merge_1_insertion_2_fragments_2_subsets_1():
         "s6":         "T-TTT-TTTTGGGGGGGGGGGGGGGGGGGG",
         "s7":         "T-TTT-TTTTGGGGGGGGGGGGGGGGGGGG",
         "s8":         "T-TTT-TTTTGGGGGGGGGGGGGGGGGGGG",
+        "backbone_indices": [1, "I", 2, 3, 4, "I", 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28],
     }
 
 def test_merge_1_insertion_2_fragments_2_subsets_2():
@@ -250,16 +261,17 @@ def test_merge_1_insertion_2_fragments_2_subsets_2():
     output_prefix = TEMP_OUTPUT_PREFIX + test_suffix
     merged_alignment = main.merge_hmms_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix, "custom", 1)
     assert merged_alignment == {
-        "fragment-0": "AAAAt---AAAAGGGGGGGGGGGGGGGGGGGG",
-        "fragment-1": "TTTTatttTTTTGGGGGGGGGGGGGGGGG---",
-        "s1":         "AAAA----AAAAGGGGGGGGGGGGGGGGGGGG",
-        "s2":         "AAAA----AAAAGGGGGGGGGGGGGGGGGGGG",
-        "s3":         "AAAA----AAAAGGGGGGGGGGGGGGGGGGGG",
-        "s4":         "AAAA----AAAAGGGGGGGGGGGGGGGGGGGG",
-        "s5":         "TTTT----TTTTGGGGGGGGGGGGGGGGGGGG",
-        "s6":         "TTTT----TTTTGGGGGGGGGGGGGGGGGGGG",
-        "s7":         "TTTT----TTTTGGGGGGGGGGGGGGGGGGGG",
-        "s8":         "TTTT----TTTTGGGGGGGGGGGGGGGGGGGG",
+        "fragment-0": "AAAAt----AAAAGGGGGGGGGGGGGGGGGGGG",
+        "fragment-1": "TTTT-atttTTTTGGGGGGGGGGGGGGGGG---",
+        "s1":         "AAAA-----AAAAGGGGGGGGGGGGGGGGGGGG",
+        "s2":         "AAAA-----AAAAGGGGGGGGGGGGGGGGGGGG",
+        "s3":         "AAAA-----AAAAGGGGGGGGGGGGGGGGGGGG",
+        "s4":         "AAAA-----AAAAGGGGGGGGGGGGGGGGGGGG",
+        "s5":         "TTTT-----TTTTGGGGGGGGGGGGGGGGGGGG",
+        "s6":         "TTTT-----TTTTGGGGGGGGGGGGGGGGGGGG",
+        "s7":         "TTTT-----TTTTGGGGGGGGGGGGGGGGGGGG",
+        "s8":         "TTTT-----TTTTGGGGGGGGGGGGGGGGGGGG",
+        "backbone_indices": [1, 2, 3, 4, "I", "I", "I", "I", "I", 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28],
     }
 
 
@@ -279,6 +291,7 @@ def test_merge_1_insertion_2_subsets_0():
         "s6":       "AAAA-AAAA",
         "s7":       "AAAA-AAAA",
         "s8":       "AAAA-AAAA",
+        "backbone_indices": [1, 2, 3, 4, "I", 5, 6, 7, 8],
     }
 
 def test_merge_2_subsets_0():
@@ -287,6 +300,7 @@ def test_merge_2_subsets_0():
     input_dir,backbone_alignment,fragment_sequences_file,test_root = setup_merge_inputs(test_root, test_suffix)
     output_prefix = TEMP_OUTPUT_PREFIX + test_suffix
     merged_alignment = main.merge_hmms_helper(input_dir, backbone_alignment, fragment_sequences_file, output_prefix, "custom", 1)
+
     assert merged_alignment == {
         "fragment": "AAAAAAAA----------------------",
         "s1":       "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
@@ -297,6 +311,7 @@ def test_merge_2_subsets_0():
         "s6":       "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         "s7":       "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         "s8":       "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "backbone_indices": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30],
     }
 
 def test_identical_backbone_3_subsets():

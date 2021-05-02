@@ -161,69 +161,78 @@ def get_merged_alignments(aligned_sequences_dict, backtraced_states_dict, backbo
     merged_alignment["backbone_indices"] = list(range(1, num_columns + 1))
     for aligned_sequence_id,aligned_sequence in aligned_sequences_dict.items():
         current_backtraced_states = backtraced_states_dict[aligned_sequence_id]
-        print(current_backtraced_states)
+        # print(current_backtraced_states)
         current_backtraced_states = list(map(get_column_type_and_index, current_backtraced_states))
-        print(current_backtraced_states)
+        # print(current_backtraced_states)
         assert current_backtraced_states[0] == ("M",0)
         current_sequence_list = ["Z" for _ in range(num_columns)]
-        print("fragmentary sequence aligned length is :" + str(len(aligned_sequence)))
+        # print("fragmentary sequence aligned length is :" + str(len(aligned_sequence)))
         for aligned_sequence_index,(column_type,backbone_column_index) in enumerate(current_backtraced_states[1:len(current_backtraced_states)-1]):
             if(column_type != "I"):
-                print(backbone_column_index)
-                print(current_sequence_list)
-                print("adding " + str(aligned_sequence[aligned_sequence_index]) + " at position " + str(backbone_column_index - 1))
+                # print(backbone_column_index)
+                # print(current_sequence_list)
+                # print("adding " + str(aligned_sequence[aligned_sequence_index]) + " at position " + str(backbone_column_index - 1))
                 current_sequence_list[backbone_column_index - 1] = aligned_sequence[aligned_sequence_index]
         merged_alignment[aligned_sequence_id] = "".join(current_sequence_list)
-    pp.pprint(merged_alignment)
+    # pp.pprint(merged_alignment)
 
-    alignment_length = None
-    for aligned_sequence in merged_alignment:
-        if(alignment_length == None):
-            alignment_length = len(merged_alignment[aligned_sequence])
-            print("full: " + str(alignment_length))
-        print(aligned_sequence)
-        print(merged_alignment[aligned_sequence])
-        print(len(merged_alignment[aligned_sequence]))
-        assert alignment_length == len(merged_alignment[aligned_sequence])
+    if(DEBUG):
+        alignment_length = None
+        for aligned_sequence in merged_alignment:
+            if(alignment_length == None):
+                alignment_length = len(merged_alignment[aligned_sequence])
+                # print("full: " + str(alignment_length))
+            # print(aligned_sequence)
+            # print(merged_alignment[aligned_sequence])
+            # print(len(merged_alignment[aligned_sequence]))
+            assert alignment_length == len(merged_alignment[aligned_sequence])
 
     # time to add insertion columns
     for aligned_sequence_id,aligned_sequence in aligned_sequences_dict.items():
         current_backtraced_states = backtraced_states_dict[aligned_sequence_id]
         current_backtraced_states = list(map(get_column_type_and_index, current_backtraced_states))
-        print("aligning " + str(aligned_sequence_id))
+        # print("aligning " + str(aligned_sequence_id))
         for aligned_sequence_index,(column_type,backbone_column_index) in enumerate(current_backtraced_states[1:len(current_backtraced_states)-1]):
             if(column_type == "I"):
-                insertion_index_in_backbone = merged_alignment["backbone_indices"].index(backbone_column_index)
-                print("Inserting into " + str(insertion_index_in_backbone) + " character " + str(aligned_sequence[aligned_sequence_index]))
-                # if(insertion_index_in_backbone == len(merged_alignment["backbone_indices"]) - 1 or merged_alignment["backbone_indices"][insertion_index_in_backbone + 1] == "I"):
-                #     # this is already an insertion column
-                #     print("already an insertion column")
-                #     current_alignment_list = list(merged_alignment[aligned_sequence_id])
-                #     assert current_alignment_list[insertion_index_in_backbone + 1] == "-"
-                #     current_alignment_list[insertion_index_in_backbone + 1] = aligned_sequence[aligned_sequence_index]
-                # else:
-                print("making a new insertion column")
-                merged_alignment["backbone_indices"] = merged_alignment["backbone_indices"][:insertion_index_in_backbone + 1] + ["I"] + merged_alignment["backbone_indices"][insertion_index_in_backbone + 1:]
-                for merged_sequence_id,merged_sequence in merged_alignment.items():
-                    if(merged_sequence_id != "backbone_indices"):
-                        merged_alignment[merged_sequence_id] = merged_alignment[merged_sequence_id][:insertion_index_in_backbone + 1] + "-" + merged_alignment[merged_sequence_id][insertion_index_in_backbone + 1:]
+                if(backbone_column_index == num_columns):
+                    # print("making a new insertion column")
+                    merged_alignment["backbone_indices"] = merged_alignment["backbone_indices"] + ["I"]
+                    for merged_sequence_id,merged_sequence in merged_alignment.items():
+                        if(merged_sequence_id not in ["backbone_indices", aligned_sequence_id]):
+                            merged_alignment[merged_sequence_id] = merged_alignment[merged_sequence_id] + "-"
+                    merged_alignment[aligned_sequence_id] += aligned_sequence[aligned_sequence_index]
+                else:
+                    insertion_index_in_backbone = merged_alignment["backbone_indices"].index(backbone_column_index + 1)
+                    # print("Inserting into right before " + str(insertion_index_in_backbone) + " character " + str(aligned_sequence[aligned_sequence_index]))
+                    # if(insertion_index_in_backbone == len(merged_alignment["backbone_indices"]) - 1 or merged_alignment["backbone_indices"][insertion_index_in_backbone + 1] == "I"):
+                    #     # this is already an insertion column
+                    #     print("already an insertion column")
+                    #     current_alignment_list = list(merged_alignment[aligned_sequence_id])
+                    #     assert current_alignment_list[insertion_index_in_backbone + 1] == "-"
+                    #     current_alignment_list[insertion_index_in_backbone + 1] = aligned_sequence[aligned_sequence_index]
+                    # else:
+                    # print("making a new insertion column")
+                    merged_alignment["backbone_indices"] = merged_alignment["backbone_indices"][:insertion_index_in_backbone] + ["I"] + merged_alignment["backbone_indices"][insertion_index_in_backbone:]
+                    for merged_sequence_id,merged_sequence in merged_alignment.items():
+                        if(merged_sequence_id != "backbone_indices"):
+                            merged_alignment[merged_sequence_id] = merged_alignment[merged_sequence_id][:insertion_index_in_backbone] + "-" + merged_alignment[merged_sequence_id][insertion_index_in_backbone:]
 
-                current_alignment_list = list(merged_alignment[aligned_sequence_id])
-                assert current_alignment_list[insertion_index_in_backbone + 1] == "-"
-                current_alignment_list[insertion_index_in_backbone + 1] = aligned_sequence[aligned_sequence_index]
-                merged_alignment[aligned_sequence_id] = "".join(current_alignment_list)
+                    current_alignment_list = list(merged_alignment[aligned_sequence_id])
+                    assert current_alignment_list[insertion_index_in_backbone] == "-"
+                    current_alignment_list[insertion_index_in_backbone] = aligned_sequence[aligned_sequence_index]
+                    merged_alignment[aligned_sequence_id] = "".join(current_alignment_list)
 
-    pp.pprint(merged_alignment)
-
-    alignment_length = None
-    for aligned_sequence in merged_alignment:
-        if(alignment_length == None):
-            alignment_length = len(merged_alignment[aligned_sequence])
-            print("full: " + str(alignment_length))
-        print(aligned_sequence)
-        print(merged_alignment[aligned_sequence])
-        print(len(merged_alignment[aligned_sequence]))
-        assert alignment_length == len(merged_alignment[aligned_sequence])
+    # pp.pprint(merged_alignment)
+    if(DEBUG):
+        alignment_length = None
+        for aligned_sequence in merged_alignment:
+            if(alignment_length == None):
+                alignment_length = len(merged_alignment[aligned_sequence])
+                # print("full: " + str(alignment_length))
+            # print(aligned_sequence)
+            # print(merged_alignment[aligned_sequence])
+            # print(len(merged_alignment[aligned_sequence]))
+            assert alignment_length == len(merged_alignment[aligned_sequence])
     return merged_alignment
 
 
@@ -799,9 +808,10 @@ def create_mappings_helper(input_fasta_filenames, backbone_alignment):
                     if(current_sequence_character == backbone_character):
                         current_mapping[backbone_index + 1] = current_sequence_index + 1
                         backbone_index += 1
-            for key_so_far in cumulative_mapping:
-                if key_so_far in current_mapping:
-                    assert cumulative_mapping[key_so_far] == current_mapping[key_so_far]
+            if(DEBUG):
+                for key_so_far in cumulative_mapping:
+                    if key_so_far in current_mapping:
+                        assert cumulative_mapping[key_so_far] == current_mapping[key_so_far]
             cumulative_mapping.update(current_mapping)
         assert current_hmm_index not in match_state_mappings
         match_state_mappings[current_hmm_index] = cumulative_mapping
