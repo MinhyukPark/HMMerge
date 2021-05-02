@@ -36,7 +36,8 @@ def run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, frag
     # with np.printoptions(suppress=True, linewidth=np.inf):
         # print(transition_probabilities)
     print("starting viterbi")
-    return fragmentary_sequence_id,run_viterbi_log_vectorized(adjacency_matrix, np.log2(emission_probabilities), np.log2(transition_probabilities), alphabet, fragmentary_sequence)
+    aligned_sequences,backtraced_states = run_viterbi_log_vectorized(adjacency_matrix, np.log2(emission_probabilities), np.log2(transition_probabilities), alphabet, fragmentary_sequence)
+    return fragmentary_sequence_id,aligned_sequences,backtraced_states
 
 @click.command()
 @click.option("--input-dir", required=True, type=click.Path(exists=True), help="The input temp root dir of sepp that contains all the HMMs")
@@ -122,13 +123,13 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
 
         for aligned_result in aligned_results:
             aligned_sequences_dict[aligned_result[0]] = aligned_result[1]
-            backtraced_states_dict[aligned_result[0]] = aligned_result[1]
+            backtraced_states_dict[aligned_result[0]] = aligned_result[2]
     else:
         for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
             fragmentary_sequence = fragmentary_sequence_record.seq
             fragmentary_sequence_id = fragmentary_sequence_record.id
-            aligned_sequence,backtraced_states = run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)[1]
-            aligned_sequences_dict[fragmentary_sequence_id] = aligned_sequence
+            _,aligned_sequences,backtraced_states = run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)
+            aligned_sequences_dict[fragmentary_sequence_id] = aligned_sequences
             backtraced_states_dict[fragmentary_sequence_id] = backtraced_states
 
 
@@ -161,11 +162,11 @@ def get_merged_alignments(aligned_sequences_dict, backtraced_states_dict, backbo
     merged_alignment["backbone_indices"] = list(range(1, num_columns + 1))
     for aligned_sequence_id,aligned_sequence in aligned_sequences_dict.items():
         current_backtraced_states = backtraced_states_dict[aligned_sequence_id]
-        # print(current_backtraced_states)
+        print(current_backtraced_states)
         current_backtraced_states = list(map(get_column_type_and_index, current_backtraced_states))
-        # print(current_backtraced_states)
+        print(current_backtraced_states)
         assert current_backtraced_states[0] == ("M",0)
-        current_sequence_list = ["Z" for _ in range(num_columns)]
+        current_sequence_list = ["-" for _ in range(num_columns)]
         # print("fragmentary sequence aligned length is :" + str(len(aligned_sequence)))
         for aligned_sequence_index,(column_type,backbone_column_index) in enumerate(current_backtraced_states[1:len(current_backtraced_states)-1]):
             if(column_type != "I"):
