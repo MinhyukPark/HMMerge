@@ -87,6 +87,7 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
     mappings = None
     bitscores = None
     aligned_sequences_dict = {}
+    backtraced_states_dict = {}
     hmms = None
     num_hmms = None
     input_profile_files = None
@@ -121,18 +122,22 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
 
         for aligned_result in aligned_results:
             aligned_sequences_dict[aligned_result[0]] = aligned_result[1]
+            backtraced_states_dict[aligned_result[0]] = aligned_result[1]
     else:
         for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
             fragmentary_sequence = fragmentary_sequence_record.seq
             fragmentary_sequence_id = fragmentary_sequence_record.id
-            aligned_sequences_dict[fragmentary_sequence_id] = run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)[1]
+            aligned_sequence,backtraced_states = run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)[1]
+            aligned_sequences_dict[fragmentary_sequence_id] = aligned_sequence
+            backtraced_states_dict[fragmentary_sequence_id] = backtraced_states
 
 
-    print("aligned sequences are")
+
+    print("viterbi output sequences are")
     # pp.pprint(aligned_sequences_dict)
     with np.printoptions(suppress=True, linewidth=np.inf):
         print(aligned_sequences_dict)
-    merged_alignment = get_merged_alignments(aligned_sequences_dict, backbone_alignment)
+    merged_alignment = get_merged_alignments(aligned_sequences_dict, backtraced_states_dict, backbone_alignment)
     print("merged alignment is")
     # pp.pprint(merged_alignment)
     with np.printoptions(suppress=True, linewidth=np.inf):
@@ -140,69 +145,85 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
 
     with open(output_prefix + "HMMerge.aligned.fasta", "w") as f:
         for merged_aligned_sequence in merged_alignment:
-            f.write(">" + merged_aligned_sequence + "\n")
-            f.write(merged_alignment[merged_aligned_sequence] + "\n")
+            if(merged_aligned_sequence != "backbone_indices"):
+                f.write(">" + merged_aligned_sequence + "\n")
+                f.write(merged_alignment[merged_aligned_sequence] + "\n")
 
     return merged_alignment
 
-def get_merged_alignments(aligned_sequences_dict, backbone_alignment):
+def get_merged_alignments(aligned_sequences_dict, backtraced_states_dict, backbone_alignment):
     merged_alignment = {}
+    num_columns = None
     for backbone_sequence_record in SeqIO.parse(backbone_alignment, "fasta"):
+        if(num_columns == None):
+            num_columns = len(backbone_sequence_record)
         merged_alignment[backbone_sequence_record.id] = str(backbone_sequence_record.seq)
-
+    merged_alignment["backbone_indices"] = list(range(1, num_columns + 1))
     for aligned_sequence_id,aligned_sequence in aligned_sequences_dict.items():
-        merged_alignment[aligned_sequence_id] = ""
-        for current_position,current_letter in enumerate(aligned_sequence):
-            # print("processing " + current_letter + " at position: " + str(current_position))
-            if(current_letter == "-"):
-                # deletion site so just advance the backbone alignment
-                # print("deletion in transitivity merge")
-                merged_alignment[aligned_sequence_id] += current_letter
-            elif(current_letter.isupper()):
-                # homology
-                # print("homology in transitivity merge")
-                is_already_insertion_column = False
-                for backbone_sequence_id,backbone_sequence in merged_alignment.items():
-                    if(current_position == len(backbone_sequence) or backbone_sequence[current_position].islower()):
-                        if(current_position < len(backbone_sequence)):
-                            # print(backbone_sequence[current_position] + " is lower")
-                            is_already_insertion_column = True
-                        else:
-                            # print("end of sequence")
-                            pass
-                        break
-                if(is_already_insertion_column):
-                    for i in range(current_position, len(backbone_sequence)):
-                        if(backbone_sequence[i].islower()):
-                            merged_alignment[aligned_sequence_id] += "-"
-                    # merged_alignment[aligned_sequence_id] += current_letter
-                merged_alignment[aligned_sequence_id] += current_letter
-            elif(current_letter.islower()):
-                # this means it's an insertion site
-                # print("insertion in transitivity merge")
-                is_already_insertion_column = False
-                for backbone_sequence_id,backbone_sequence in merged_alignment.items():
-                    if(current_position == len(backbone_sequence) or backbone_sequence[current_position].islower()):
-                        if(current_position < len(backbone_sequence)):
-                            # print(backbone_sequence[current_position] + " is lower")
-                            is_already_insertion_column = True
-                        else:
-                            pass
-                            # print("end of sequence")
-                        break
-                if(not is_already_insertion_column):
-                    # print("creating a new column for insertion")
-                    for backbone_sequence_id,backbone_sequence in merged_alignment.items():
-                        if(backbone_sequence_id != aligned_sequence_id):
-                            merged_alignment[backbone_sequence_id] = backbone_sequence[:current_position] + "-" + backbone_sequence[current_position:]
-                merged_alignment[aligned_sequence_id] += current_letter
+        current_backtraced_states = backtraced_states_dict[aligned_sequence_id]
+        print(current_backtraced_states)
+        current_backtraced_states = list(map(get_column_type_and_index, current_backtraced_states))
+        print(current_backtraced_states)
+        assert current_backtraced_states[0] == ("M",0)
+        current_sequence_list = ["Z" for _ in range(num_columns)]
+        print("fragmentary sequence aligned length is :" + str(len(aligned_sequence)))
+        for aligned_sequence_index,(column_type,backbone_column_index) in enumerate(current_backtraced_states[1:len(current_backtraced_states)-1]):
+            if(column_type != "I"):
+                print(backbone_column_index)
+                print(current_sequence_list)
+                print("adding " + str(aligned_sequence[aligned_sequence_index]) + " at position " + str(backbone_column_index - 1))
+                current_sequence_list[backbone_column_index - 1] = aligned_sequence[aligned_sequence_index]
+        merged_alignment[aligned_sequence_id] = "".join(current_sequence_list)
+    pp.pprint(merged_alignment)
 
     alignment_length = None
     for aligned_sequence in merged_alignment:
         if(alignment_length == None):
-            alignment_length == len(aligned_sequence)
-        else:
-            assert alignment_length == len(aligned_sequence)
+            alignment_length = len(merged_alignment[aligned_sequence])
+            print("full: " + str(alignment_length))
+        print(aligned_sequence)
+        print(merged_alignment[aligned_sequence])
+        print(len(merged_alignment[aligned_sequence]))
+        assert alignment_length == len(merged_alignment[aligned_sequence])
+
+    # time to add insertion columns
+    for aligned_sequence_id,aligned_sequence in aligned_sequences_dict.items():
+        current_backtraced_states = backtraced_states_dict[aligned_sequence_id]
+        current_backtraced_states = list(map(get_column_type_and_index, current_backtraced_states))
+        print("aligning " + str(aligned_sequence_id))
+        for aligned_sequence_index,(column_type,backbone_column_index) in enumerate(current_backtraced_states[1:len(current_backtraced_states)-1]):
+            if(column_type == "I"):
+                insertion_index_in_backbone = merged_alignment["backbone_indices"].index(backbone_column_index)
+                print("Inserting into " + str(insertion_index_in_backbone) + " character " + str(aligned_sequence[aligned_sequence_index]))
+                # if(insertion_index_in_backbone == len(merged_alignment["backbone_indices"]) - 1 or merged_alignment["backbone_indices"][insertion_index_in_backbone + 1] == "I"):
+                #     # this is already an insertion column
+                #     print("already an insertion column")
+                #     current_alignment_list = list(merged_alignment[aligned_sequence_id])
+                #     assert current_alignment_list[insertion_index_in_backbone + 1] == "-"
+                #     current_alignment_list[insertion_index_in_backbone + 1] = aligned_sequence[aligned_sequence_index]
+                # else:
+                print("making a new insertion column")
+                merged_alignment["backbone_indices"] = merged_alignment["backbone_indices"][:insertion_index_in_backbone + 1] + ["I"] + merged_alignment["backbone_indices"][insertion_index_in_backbone + 1:]
+                for merged_sequence_id,merged_sequence in merged_alignment.items():
+                    if(merged_sequence_id != "backbone_indices"):
+                        merged_alignment[merged_sequence_id] = merged_alignment[merged_sequence_id][:insertion_index_in_backbone + 1] + "-" + merged_alignment[merged_sequence_id][insertion_index_in_backbone + 1:]
+
+                current_alignment_list = list(merged_alignment[aligned_sequence_id])
+                assert current_alignment_list[insertion_index_in_backbone + 1] == "-"
+                current_alignment_list[insertion_index_in_backbone + 1] = aligned_sequence[aligned_sequence_index]
+                merged_alignment[aligned_sequence_id] = "".join(current_alignment_list)
+
+    pp.pprint(merged_alignment)
+
+    alignment_length = None
+    for aligned_sequence in merged_alignment:
+        if(alignment_length == None):
+            alignment_length = len(merged_alignment[aligned_sequence])
+            print("full: " + str(alignment_length))
+        print(aligned_sequence)
+        print(merged_alignment[aligned_sequence])
+        print(len(merged_alignment[aligned_sequence]))
+        assert alignment_length == len(merged_alignment[aligned_sequence])
     return merged_alignment
 
 
@@ -318,8 +339,8 @@ def run_viterbi_log_vectorized(adjacency_matrix, emission_probabilities, transit
         # pp.pprint(current_position)
         current_sequence_index = current_position[0]
         current_state = current_position[1]
-
         backtraced_states.append(current_state)
+
         current_position = backtrace_table[current_position]
         if(np.sum(emission_probabilities[current_state]) > np.NINF):
             # current position is already the previous position here
@@ -328,6 +349,7 @@ def run_viterbi_log_vectorized(adjacency_matrix, emission_probabilities, transit
                 assert previous_state_in_sequence <= current_state
                 assert transition_probabilities[previous_state_in_sequence][current_state] > np.NINF
                 assert adjacency_matrix[previous_state_in_sequence][current_state] > 0
+            # the if statement is redundant since ==2 would always be an insertion state but not all insertion state is == 2 for instance m to i is not == 2
             if(adjacency_matrix[previous_state_in_sequence][current_state] == 2 or is_insertion(current_state)):
                 # print("insertion in fragment")
                 aligned_sequence += current_fragmentary_sequence[current_sequence_index - 1].lower()
@@ -342,7 +364,7 @@ def run_viterbi_log_vectorized(adjacency_matrix, emission_probabilities, transit
     aligned_sequence = aligned_sequence[::-1]
     # pp.pprint(backtraced_states)
     # pp.pprint(aligned_sequence)
-    return aligned_sequence
+    return aligned_sequence,backtraced_states
 
 def get_matrices(output_hmm, input_dir, backbone_alignment, output_prefix):
     alphabet = ["A", "C", "G", "T"]
@@ -484,6 +506,24 @@ def get_index(state_type, column_index):
         return 2 + (3 * (int(column_index) - 1)) + 2
     else:
         raise Exception(str(state_type) + " is not a valid type")
+
+def get_column_type_and_index(state_index):
+    if(state_index < 2):
+        if(state_index == 0):
+            return "M",0
+        elif(state_index == 1):
+            return "I",0
+    else:
+        adjusted_state_index = state_index - 2
+        column_index = int((state_index + 1)/ 3)
+        if(adjusted_state_index % 3 == 0):
+            return "M",column_index
+        elif(adjusted_state_index % 3 == 1):
+            return "I",column_index
+        elif(adjusted_state_index % 3 == 2):
+            return "D",column_index
+
+    raise Exception("Unknown State Index")
 
 
 def build_hmm_profiles(input_dir, mappings, output_prefix):
