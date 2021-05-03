@@ -23,21 +23,22 @@ def run_align_wrapper(args):
 def run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix):
     output_hmm = get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)
     # print("the output hmm for sequence " + str(fragmentary_sequence_id) + " is")
-    # pp.pprint(mappings)
+    # pp.pprint(output_hmm)
     adjacency_matrix,emission_probabilities,transition_probabilities,alphabet = get_matrices(output_hmm, input_dir, backbone_alignment, output_prefix)
-    print("adjacency matrix for sequence " + str(fragmentary_sequence_id) + " is")
+    # print("adjacency matrix for sequence " + str(fragmentary_sequence_id) + " is")
     # with np.printoptions(suppress=True, linewidth=np.inf):
         # print(adjacency_matrix)
     # print(adjacency_matrix[len(adjacency_matrix) - 2,:])
-    print("emission probabilities for sequence " + str(fragmentary_sequence_id) + " is")
+    # print("emission probabilities for sequence " + str(fragmentary_sequence_id) + " is")
     # with np.printoptions(suppress=True, linewidth=np.inf):
         # print(emission_probabilities)
-    print("tranistion probabilities for sequence " + str(fragmentary_sequence_id) + " is")
+    # print("tranistion probabilities for sequence " + str(fragmentary_sequence_id) + " is")
     # with np.printoptions(suppress=True, linewidth=np.inf):
         # print(transition_probabilities)
-    print("starting viterbi")
-    aligned_sequences,backtraced_states = run_viterbi_log_vectorized(adjacency_matrix, np.log2(emission_probabilities), np.log2(transition_probabilities), alphabet, fragmentary_sequence)
-    return fragmentary_sequence_id,aligned_sequences,backtraced_states
+    print("starting viterbi for sequence " + str(fragmentary_sequence_id))
+    with np.errstate(divide='ignore'):
+        aligned_sequences,backtraced_states = run_viterbi_log_vectorized(adjacency_matrix, np.log2(emission_probabilities), np.log2(transition_probabilities), alphabet, fragmentary_sequence)
+        return fragmentary_sequence_id,aligned_sequences,backtraced_states
 
 @click.command()
 @click.option("--input-dir", required=True, type=click.Path(exists=True), help="The input temp root dir of sepp that contains all the HMMs")
@@ -134,21 +135,22 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
 
 
 
-    print("viterbi output sequences are")
+    # print("viterbi output sequences are")
     # pp.pprint(aligned_sequences_dict)
-    with np.printoptions(suppress=True, linewidth=np.inf):
-        print(aligned_sequences_dict)
+    # with np.printoptions(suppress=True, linewidth=np.inf):
+        # print(aligned_sequences_dict)
     merged_alignment = get_merged_alignments(aligned_sequences_dict, backtraced_states_dict, backbone_alignment)
-    print("merged alignment is")
-    # pp.pprint(merged_alignment)
-    with np.printoptions(suppress=True, linewidth=np.inf):
-        print(merged_alignment)
 
     with open(output_prefix + "HMMerge.aligned.fasta", "w") as f:
         for merged_aligned_sequence in merged_alignment:
             if(merged_aligned_sequence != "backbone_indices"):
                 f.write(">" + merged_aligned_sequence + "\n")
                 f.write(merged_alignment[merged_aligned_sequence] + "\n")
+
+    print("merged alignment is written to " + str(output_prefix) + "HMMerge.aligned.fasta")
+    # pp.pprint(merged_alignment)
+    # with np.printoptions(suppress=True, linewidth=np.inf):
+        # print(merged_alignment)
 
     return merged_alignment
 
@@ -162,9 +164,9 @@ def get_merged_alignments(aligned_sequences_dict, backtraced_states_dict, backbo
     merged_alignment["backbone_indices"] = list(range(1, num_columns + 1))
     for aligned_sequence_id,aligned_sequence in aligned_sequences_dict.items():
         current_backtraced_states = backtraced_states_dict[aligned_sequence_id]
-        print(current_backtraced_states)
+        # print(current_backtraced_states)
         current_backtraced_states = list(map(get_column_type_and_index, current_backtraced_states))
-        print(current_backtraced_states)
+        # print(current_backtraced_states)
         assert current_backtraced_states[0] == ("M",0)
         current_sequence_list = ["-" for _ in range(num_columns)]
         # print("fragmentary sequence aligned length is :" + str(len(aligned_sequence)))
@@ -282,7 +284,7 @@ def run_viterbi_log_vectorized(adjacency_matrix, emission_probabilities, transit
     # [0,j] should be -inf but i'm making everything -inf in the initilazation
     for state_index in range(len(emission_probabilities)):
         if(state_index % 300 == 0):
-            print("state index: " + str(state_index))
+            print("Viterbi in progress - state index: " + str(state_index) + "/" + str(num_states))
         for sequence_index in range(len(current_fragmentary_sequence) + 1):
             if(state_index == 0 and sequence_index == 0):
                 # this is already handled by the base case
@@ -320,6 +322,7 @@ def run_viterbi_log_vectorized(adjacency_matrix, emission_probabilities, transit
                             if(transition_probabilities[search_state_index,state_index] != np.NINF):
                                 raise Exception("No edge but transition probability exists")
                             continue
+    print("Viterbi in progress - state index: " + str(num_states) + "/" + str(num_states))
     if(DEBUG):
         readable_table = np.around(lookup_table, decimals=3)
         for state_index in range(len(emission_probabilities)):
