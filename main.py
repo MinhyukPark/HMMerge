@@ -22,9 +22,12 @@ def run_align_wrapper(args):
 
 def run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix):
     output_hmm = get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)
+    # output_hmm = get_probabilities_top_1_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)
     # print("the output hmm for sequence " + str(fragmentary_sequence_id) + " is")
     # pp.pprint(output_hmm)
     adjacency_matrix,emission_probabilities,transition_probabilities,alphabet = get_matrices(output_hmm, input_dir, backbone_alignment, output_prefix)
+    adjacency_matrix,transition_probabilities = add_equal_entry_exit_probabilities(adjacency_matrix,transition_probabilities)
+    # adjacency_matrix,emission_probabilities,transition_probabilities,alphabet = get_matrices_top_1(output_hmm, input_dir, backbone_alignment, output_prefix)
     # print("adjacency matrix for sequence " + str(fragmentary_sequence_id) + " is")
     # with np.printoptions(suppress=True, linewidth=np.inf):
         # print(adjacency_matrix)
@@ -86,6 +89,7 @@ def generic_helper(input_dir, num_hmms, input_profile_files, input_sequence_file
     return bitscores,hmms
 
 def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes):
+    DEBUG = True
     mappings = None
     bitscores = None
     aligned_sequences_dict = {}
@@ -140,6 +144,8 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
     # with np.printoptions(suppress=True, linewidth=np.inf):
         # print(aligned_sequences_dict)
     merged_alignment = get_merged_alignments(aligned_sequences_dict, backtraced_states_dict, backbone_alignment)
+    # NOTE: top 1
+    # merged_alignment = get_merged_alignments_top_1(aligned_sequences_dict, backtraced_states_dict, backbone_alignment, mappings)
 
     with open(output_prefix + "HMMerge.aligned.fasta", "w") as f:
         for merged_aligned_sequence in merged_alignment:
@@ -148,10 +154,65 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
                 f.write(merged_alignment[merged_aligned_sequence] + "\n")
 
     print("merged alignment is written to " + str(output_prefix) + "HMMerge.aligned.fasta")
-    # pp.pprint(merged_alignment)
+    pp.pprint(merged_alignment)
     # with np.printoptions(suppress=True, linewidth=np.inf):
         # print(merged_alignment)
 
+    return merged_alignment
+
+def get_merged_alignments_top_1(aligned_sequences_dict, backtraced_states_dict, backbone_alignment, mapping):
+    merged_alignment = {}
+    num_columns = None
+    for backbone_sequence_record in SeqIO.parse(backbone_alignment, "fasta"):
+        if(num_columns == None):
+            num_columns = len(backbone_sequence_record)
+        merged_alignment[backbone_sequence_record.id] = str(backbone_sequence_record.seq)
+    merged_alignment["backbone_indices"] = list(range(1, num_columns + 1))
+
+    for aligned_sequence_id,aligned_sequence in aligned_sequences_dict.items():
+        current_backtraced_states = backtraced_states_dict[aligned_sequence_id]
+        current_sequence_list = ["-" for _ in range(num_columns)]
+        # print("fragmentary sequence aligned length is :" + str(len(aligned_sequence)))
+        for aligned_sequence_index,fragmentary_state_index in current_backtraced_states[1:len(current_backtraced_states)-1]:
+            if(not is_insertion(backbone_column_index)):
+                # print("adding " + str(aligned_sequence[aligned_sequence_index]) + " at position " + str(backbone_column_index - 1))
+                backbone_sequence_index = None
+                for mapping_backbone_index in mapping:
+                    if(mapping[mapping_backbone_index] == aligned_sequence_index):
+                        backbone_sequence_index = mapping_backbone_index
+                        break
+                current_sequence_list[backbone_sequnece_index - 1] = aligned_sequence[aligned_sequence_index]
+        merged_alignment[aligned_sequence_id] = "".join(current_sequence_list)
+
+    for aligned_sequence_id,aligned_sequence in aligned_sequences_dict.items():
+        current_backtraced_states = backtraced_states_dict[aligned_sequence_id]
+        # print("aligning " + str(aligned_sequence_id))
+        for aligned_sequence_index,fragmentary_state_index in current_backtraced_states[1:len(current_backtraced_states)-1]:
+            if(is_insertion(fragmentary_state_index)):
+                backbone_sequence_index = None
+                for mapping_backbone_index in mapping:
+                    if(mapping[mapping_backbone_index] == aligned_sequence_index):
+                        backbone_sequence_index = mapping_backbone_index
+                        break
+                if(backbone_sequence_index == len(aligned_sequence)):
+                    # print("making a new insertion column")
+                    merged_alignment["backbone_indices"] = merged_alignment["backbone_indices"] + ["I"]
+                    for merged_sequence_id,merged_sequence in merged_alignment.items():
+                        if(merged_sequence_id not in ["backbone_indices", aligned_sequence_id]):
+                            merged_alignment[merged_sequence_id] = merged_alignment[merged_sequence_id] + "-"
+                    merged_alignment[aligned_sequence_id] += aligned_sequence[aligned_sequence_index]
+                else:
+                    insertion_index_in_backbone = merged_alignment["backbone_indices"].index(backbone_sequence_index + 1)
+                    merged_alignment["backbone_indices"] = merged_alignment["backbone_indices"][:insertion_index_in_backbone] + ["I"] + merged_alignment["backbone_indices"][insertion_index_in_backbone:]
+                    for merged_sequence_id,merged_sequence in merged_alignment.items():
+                        if(merged_sequence_id != "backbone_indices"):
+                            merged_alignment[merged_sequence_id] = merged_alignment[merged_sequence_id][:insertion_index_in_backbone] + "-" + merged_alignment[merged_sequence_id][insertion_index_in_backbone:]
+
+                    current_alignment_list = list(merged_alignment[aligned_sequence_id])
+                    if(DEBUG):
+                        assert current_alignment_list[insertion_index_in_backbone] == "-"
+                    current_alignment_list[insertion_index_in_backbone] = aligned_sequence[aligned_sequence_index]
+                    merged_alignment[aligned_sequence_id] = "".join(current_alignment_list)
     return merged_alignment
 
 def get_merged_alignments(aligned_sequences_dict, backtraced_states_dict, backbone_alignment):
@@ -167,7 +228,8 @@ def get_merged_alignments(aligned_sequences_dict, backtraced_states_dict, backbo
         # print(current_backtraced_states)
         current_backtraced_states = list(map(get_column_type_and_index, current_backtraced_states))
         # print(current_backtraced_states)
-        assert current_backtraced_states[0] == ("M",0)
+        if(DEBUG):
+            assert current_backtraced_states[0] == ("M",0)
         current_sequence_list = ["-" for _ in range(num_columns)]
         # print("fragmentary sequence aligned length is :" + str(len(aligned_sequence)))
         for aligned_sequence_index,(column_type,backbone_column_index) in enumerate(current_backtraced_states[1:len(current_backtraced_states)-1]):
@@ -188,7 +250,8 @@ def get_merged_alignments(aligned_sequences_dict, backtraced_states_dict, backbo
             # print(aligned_sequence)
             # print(merged_alignment[aligned_sequence])
             # print(len(merged_alignment[aligned_sequence]))
-            assert alignment_length == len(merged_alignment[aligned_sequence])
+            if(DEBUG):
+                assert alignment_length == len(merged_alignment[aligned_sequence])
 
     # time to add insertion columns
     for aligned_sequence_id,aligned_sequence in aligned_sequences_dict.items():
@@ -206,22 +269,14 @@ def get_merged_alignments(aligned_sequences_dict, backtraced_states_dict, backbo
                     merged_alignment[aligned_sequence_id] += aligned_sequence[aligned_sequence_index]
                 else:
                     insertion_index_in_backbone = merged_alignment["backbone_indices"].index(backbone_column_index + 1)
-                    # print("Inserting into right before " + str(insertion_index_in_backbone) + " character " + str(aligned_sequence[aligned_sequence_index]))
-                    # if(insertion_index_in_backbone == len(merged_alignment["backbone_indices"]) - 1 or merged_alignment["backbone_indices"][insertion_index_in_backbone + 1] == "I"):
-                    #     # this is already an insertion column
-                    #     print("already an insertion column")
-                    #     current_alignment_list = list(merged_alignment[aligned_sequence_id])
-                    #     assert current_alignment_list[insertion_index_in_backbone + 1] == "-"
-                    #     current_alignment_list[insertion_index_in_backbone + 1] = aligned_sequence[aligned_sequence_index]
-                    # else:
-                    # print("making a new insertion column")
                     merged_alignment["backbone_indices"] = merged_alignment["backbone_indices"][:insertion_index_in_backbone] + ["I"] + merged_alignment["backbone_indices"][insertion_index_in_backbone:]
                     for merged_sequence_id,merged_sequence in merged_alignment.items():
                         if(merged_sequence_id != "backbone_indices"):
                             merged_alignment[merged_sequence_id] = merged_alignment[merged_sequence_id][:insertion_index_in_backbone] + "-" + merged_alignment[merged_sequence_id][insertion_index_in_backbone:]
 
                     current_alignment_list = list(merged_alignment[aligned_sequence_id])
-                    assert current_alignment_list[insertion_index_in_backbone] == "-"
+                    if(DEBUG):
+                        assert current_alignment_list[insertion_index_in_backbone] == "-"
                     current_alignment_list[insertion_index_in_backbone] = aligned_sequence[aligned_sequence_index]
                     merged_alignment[aligned_sequence_id] = "".join(current_alignment_list)
 
@@ -237,34 +292,6 @@ def get_merged_alignments(aligned_sequences_dict, backtraced_states_dict, backbo
             # print(len(merged_alignment[aligned_sequence]))
             assert alignment_length == len(merged_alignment[aligned_sequence])
     return merged_alignment
-
-
-# def aligned_sequences(backtraced_states_dict, fragmentary_sequence_file):
-#     aligned_sequences = {}
-#     for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
-#         current_aligned_sequence = ""
-#         current_fragmentary_sequence = fragmentary_sequence_record.seq
-#         current_fragmentary_sequence_id = fragmentary_sequence_record.id
-#         backtraced_states = backtraced_states_dict[current_fragmentary_sequence_id]
-#         for state_index in backtraced_states:
-#             if(state_index == 0):
-#                 # start state does not emit anything
-#                 pass
-#             elif(state_index == 1):
-#                 # I0 state emits things
-#                 current_aligned_sequence.append(frag)
-#             elif(state_index == num_states - 1):
-#                 # end state does not emit anything
-#                 npt.assert_almost_equal(np.sum(row), 0, decimal=4)
-#             elif(is_match(state_index)):
-#                 npt.assert_almost_equal(np.sum(row), 1, decimal=4)
-#             elif(is_insertion(state_index)):
-#                 npt.assert_almost_equal(np.sum(row), 1, decimal=4)
-#             elif(is_deletion(state_index)):
-#                 npt.assert_almost_equal(np.sum(row), 0, decimal=4)
-
-#         aligned_sequences[current_fragmentary_sequence_id] = current_aligned_sequence
-#     return aligned_sequences
 
 
 def run_viterbi_log_vectorized(adjacency_matrix, emission_probabilities, transition_probabilities, alphabet, fragmentary_sequence):
@@ -283,7 +310,7 @@ def run_viterbi_log_vectorized(adjacency_matrix, emission_probabilities, transit
     num_states = len(emission_probabilities)
     # [0,j] should be -inf but i'm making everything -inf in the initilazation
     for state_index in range(len(emission_probabilities)):
-        if(state_index % 300 == 0):
+        if(state_index % 2500 == 0):
             print("Viterbi in progress - state index: " + str(state_index) + "/" + str(num_states))
         for sequence_index in range(len(current_fragmentary_sequence) + 1):
             if(state_index == 0 and sequence_index == 0):
@@ -324,6 +351,7 @@ def run_viterbi_log_vectorized(adjacency_matrix, emission_probabilities, transit
                             continue
     print("Viterbi in progress - state index: " + str(num_states) + "/" + str(num_states))
     if(DEBUG):
+        # note: debug with print
         readable_table = np.around(lookup_table, decimals=3)
         for state_index in range(len(emission_probabilities)):
             pp.pprint(readable_table[:,state_index])
@@ -379,13 +407,10 @@ def run_viterbi_log_vectorized(adjacency_matrix, emission_probabilities, transit
     # pp.pprint(aligned_sequence)
     return aligned_sequence,backtraced_states
 
-def get_matrices(output_hmm, input_dir, backbone_alignment, output_prefix):
+def get_matrices_top_1(output_hmm, input_dir, backbone_alignment, output_prefix):
     alphabet = ["A", "C", "G", "T"]
     backbone_records = SeqIO.to_dict(SeqIO.parse(backbone_alignment, "fasta"))
-    total_columns = None
-    for record in backbone_records:
-        total_columns = len(backbone_records[record].seq)
-        break
+    total_columns = len(output_hmm) - 1
     num_states = (3 * total_columns) + 2 + 1
     num_characters = 4
 
@@ -397,43 +422,10 @@ def get_matrices(output_hmm, input_dir, backbone_alignment, output_prefix):
     P = np.zeros((num_states, num_characters)) # emission probability table
     current_emission_state_mask = np.zeros(num_states)
 
-    # M[0,1] = 1 # edge from start state to I0
-    # M[0,2] = 1 # edge from start state to M1
-    # # start state doesn't connect to I1
-    # M[0,4] = 1 # edge from start state to D1
-
-    # M[1,1] = 2 # edge from I0 to I0
-    # M[1,2] = 1 # edge from I0 to M1
-
-    # for i in range(1, total_columns):
-    #     M[get_index("M", i),get_index("M", i + 1)] = 1 # Mi to Mi+1
-    #     M[get_index("M", i),get_index("I", i)] = 1 # Mi to Ii
-    #     M[get_index("M", i),get_index("D", i + 1)] = 1 # Mi to Di+1
-
-    #     M[get_index("I", i),get_index("M", i + 1)] = 1 # Ii to Mi+1
-    #     M[get_index("I", i),get_index("I", i)] = 2 # Ii to Ii
-
-    #     M[get_index("D", i),get_index("M", i + 1)] = 1 # Di to Mi+1
-    #     M[get_index("D", i),get_index("D", i + 1)] = 1 # Di to Di+1
-
-    # M[get_index("M", total_columns), num_states - 1] = 1 # Last match state to end state
-    # M[get_index("M", total_columns),get_index("I", total_columns)] = 1 # Last match state to last insertion state
-
-    # M[get_index("I", total_columns), get_index("I", total_columns)] = 2 # Last insertion state to last insertion state
-    # M[get_index("I", total_columns), num_states - 1] = 1 # Last insertion state to end state
-
-    # M[get_index("D", total_columns), num_states - 1] = 1 # Last deletion state to end state
-
     for current_column in output_hmm:
-        # print("current column: " + str(current_column))
-        # if(current_column == 0):
-            # continue
         for letter_index,letter in enumerate(alphabet):
-            # print(current_column)
-            # print(total_columns)
             if(current_column == total_columns + 1):
                 # this is the end state which has no emission probabilities or transitions going out
-                # print("breaking")
                 break
             if(current_column != 0):
                 P[get_index("M", current_column), letter_index] = output_hmm[current_column]["match"][letter_index]
@@ -466,29 +458,166 @@ def get_matrices(output_hmm, input_dir, backbone_alignment, output_prefix):
     # print(T)
     # print(M)
     # print(P)
-    for row_index,row in enumerate(P):
-        # print(row_index)
-        # print(row)
-        if(row_index == 0):
-            # start state does not emit anything
-            npt.assert_almost_equal(np.sum(row), 0, decimal=2)
-        elif(row_index == 1):
-            # I0 state emits things
-            npt.assert_almost_equal(np.sum(row), 1, decimal=2)
-        elif(row_index == num_states - 1):
-            # end state does not emit anything
-            npt.assert_almost_equal(np.sum(row), 0, decimal=2)
-        elif(is_match(row_index)):
-            npt.assert_almost_equal(np.sum(row), 1, decimal=2)
-        elif(is_insertion(row_index)):
-            npt.assert_almost_equal(np.sum(row), 1, decimal=2)
-        elif(is_deletion(row_index)):
-            npt.assert_almost_equal(np.sum(row), 0, decimal=2)
+    if(DEBUG):
+        for row_index,row in enumerate(P):
+            # print(row_index)
+            # print(row)
+            if(row_index == 0):
+                # start state does not emit anything
+                npt.assert_almost_equal(np.sum(row), 0, decimal=2)
+            elif(row_index == 1):
+                # I0 state emits things
+                npt.assert_almost_equal(np.sum(row), 1, decimal=2)
+            elif(row_index == num_states - 1):
+                # end state does not emit anything
+                npt.assert_almost_equal(np.sum(row), 0, decimal=2)
+            elif(is_match(row_index)):
+                npt.assert_almost_equal(np.sum(row), 1, decimal=2)
+            elif(is_insertion(row_index)):
+                npt.assert_almost_equal(np.sum(row), 1, decimal=2)
+            elif(is_deletion(row_index)):
+                npt.assert_almost_equal(np.sum(row), 0, decimal=2)
 
-    for row_index,row in enumerate(T[:num_states-1,:]):
-        # print("rowindex: " + str(row_index))
-        # print(row)
-        npt.assert_almost_equal(np.sum(row), 1, decimal=2)
+        for row_index,row in enumerate(T[:num_states-1,:]):
+            # print("rowindex: " + str(row_index))
+            # print(row)
+            npt.assert_almost_equal(np.sum(row), 1, decimal=2)
+
+
+    return M,P,T,alphabet
+
+def add_equal_entry_exit_probabilities(adjacency_matrix, transition_probabilities):
+    new_adjacency_matrix = adjacency_matrix.copy()
+    new_transition_probabilities = transition_probabilities.copy()
+
+    num_states = len(adjacency_matrix)
+    num_match_states = ((num_states - 3) / 3)
+    p_total_entry = 0.1
+    p_entry = p_total_entry / num_match_states
+    p_exit = 0.0001
+
+    for current_state in range(1,num_states):
+        if(is_match(current_state)):
+            new_adjacency_matrix[0,current_state] = 1
+            new_transition_probabilities[0,current_state] = p_entry
+        else:
+            new_adjacency_matrix[0,current_state] = 0
+            new_transition_probabilities[0,current_state] = 0
+
+    cumulative_sum_begin = 1 - p_total_entry
+    old_transition_sum = transition_probabilities[0,get_index("I", 0)] + transition_probabilities[0,get_index("D", 1)]
+    ratio_i0 = transition_probabilities[0,get_index("I", 0)] / old_transition_sum
+    ratio_d1 = transition_probabilities[0,get_index("D", 1)] / old_transition_sum
+
+    new_transition_probabilities[0,get_index("I", 0)] = cumulative_sum_begin * ratio_i0 # begin to I0
+    new_transition_probabilities[0,get_index("D", 1)] = cumulative_sum_begin * ratio_d1 # begin to D1
+
+    if(DEBUG):
+        for row_index,row in enumerate(new_transition_probabilities[:num_states-1,:]):
+            # print("rowindex: " + str(row_index))
+            # print(row)
+            npt.assert_almost_equal(np.sum(row), 1, decimal=2)
+
+
+    for current_state in range(1,num_states - 1):
+        if(not is_insertion(current_state)):
+            new_adjacency_matrix[current_state,num_states - 1] = 1
+            new_transition_probabilities[current_state,num_states - 1] = p_exit
+            cumulative_sum = 1 - p_exit
+            old_transition_sum = 0.0
+            for destination_state in range(current_state + 1, num_states - 1):
+                old_transition_sum += transition_probabilities[current_state, destination_state]
+            for destination_state in range(current_state + 1, num_states - 1):
+                new_transition_probabilities[current_state, destination_state] = cumulative_sum * (transition_probabilities[current_state, destination_state] / old_transition_sum)
+
+    if(DEBUG):
+        for row_index,row in enumerate(new_transition_probabilities[:num_states-1,:]):
+            # print("rowindex: " + str(row_index))
+            # print(row)
+            npt.assert_almost_equal(np.sum(row), 1, decimal=2)
+
+    # exit(0)
+
+    return new_adjacency_matrix,new_transition_probabilities
+
+def get_matrices(output_hmm, input_dir, backbone_alignment, output_prefix):
+    alphabet = ["A", "C", "G", "T"]
+    backbone_records = SeqIO.to_dict(SeqIO.parse(backbone_alignment, "fasta"))
+    total_columns = None
+    for record in backbone_records:
+        total_columns = len(backbone_records[record].seq)
+        break
+    num_states = (3 * total_columns) + 2 + 1
+    num_characters = 4
+
+    # print("output_hmm:")
+    # pp.pprint(output_hmm)
+
+    M = np.zeros((num_states, num_states)) # HMM adjacency matrix
+    T = np.zeros(M.shape) # transition probability table
+    P = np.zeros((num_states, num_characters)) # emission probability table
+    current_emission_state_mask = np.zeros(num_states)
+
+    for current_column in output_hmm:
+        for letter_index,letter in enumerate(alphabet):
+            if(current_column == total_columns + 1):
+                # this is the end state which has no emission probabilities or transitions going out
+                break
+            if(current_column != 0):
+                P[get_index("M", current_column), letter_index] = output_hmm[current_column]["match"][letter_index]
+            P[get_index("I", current_column), letter_index] = output_hmm[current_column]["insertion"][letter_index]
+            # DEBUG: this is the problem
+        T[get_index("I", current_column),get_index("I", current_column)] = output_hmm[current_column]["insert_loop"] # Ii to Ii
+        M[get_index("I", current_column),get_index("I", current_column)] = 2
+        T[get_index("M", current_column),get_index("I", current_column)] = output_hmm[current_column]["self_match_to_insert"]# Mi to Ii
+        M[get_index("M", current_column),get_index("I", current_column)] = 1
+        for current_transition_destination_column in output_hmm[current_column]["transition"]:
+            current_transition_probabilities = output_hmm[current_column]["transition"][current_transition_destination_column]
+            # these transitions are always valid
+            T[get_index("M", current_column),get_index("M", current_transition_destination_column)] = current_transition_probabilities[0] # Mi to Mi+1
+            M[get_index("M", current_column),get_index("M", current_transition_destination_column)] = 1
+            T[get_index("I", current_column),get_index("M", current_transition_destination_column)] = current_transition_probabilities[3] # Ii to Mi+1
+            M[get_index("I", current_column),get_index("M", current_transition_destination_column)] = 1
+
+            # this transition isn't valid on the 0th column(the column before the first column)  since D0 doesn't exist
+            if(current_column != 0):
+                T[get_index("D", current_column),get_index("M", current_transition_destination_column)] = current_transition_probabilities[5] # Di to Mi+1
+                M[get_index("D", current_column),get_index("M", current_transition_destination_column)] = 1
+            # this transition is only valid if it's not going to the end state. End state is techincially a match state in this scheme
+            if(current_transition_destination_column != total_columns + 1):
+                T[get_index("M", current_column),get_index("D", current_transition_destination_column)] = current_transition_probabilities[2] # Mi to Di+1
+                M[get_index("M", current_column),get_index("D", current_transition_destination_column)] = 1
+                if(current_column != 0):
+                    T[get_index("D", current_column),get_index("D", current_transition_destination_column)] = current_transition_probabilities[6] # Di to Di+1
+                    M[get_index("D", current_column),get_index("D", current_transition_destination_column)] = 1
+
+    # print(T)
+    # print(M)
+    # print(P)
+    if(DEBUG):
+        for row_index,row in enumerate(P):
+            # print(row_index)
+            # print(row)
+            if(row_index == 0):
+                # start state does not emit anything
+                npt.assert_almost_equal(np.sum(row), 0, decimal=2)
+            elif(row_index == 1):
+                # I0 state emits things
+                npt.assert_almost_equal(np.sum(row), 1, decimal=2)
+            elif(row_index == num_states - 1):
+                # end state does not emit anything
+                npt.assert_almost_equal(np.sum(row), 0, decimal=2)
+            elif(is_match(row_index)):
+                npt.assert_almost_equal(np.sum(row), 1, decimal=2)
+            elif(is_insertion(row_index)):
+                npt.assert_almost_equal(np.sum(row), 1, decimal=2)
+            elif(is_deletion(row_index)):
+                npt.assert_almost_equal(np.sum(row), 0, decimal=2)
+
+        for row_index,row in enumerate(T[:num_states-1,:]):
+            # print("rowindex: " + str(row_index))
+            # print(row)
+            npt.assert_almost_equal(np.sum(row), 1, decimal=2)
 
 
     return M,P,T,alphabet
@@ -565,9 +694,72 @@ def read_hmms(input_profile_files):
         }
     return hmms
 
+def get_probabilities_top_1_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix):
+    hmm_weights = {}
+
+    current_hmm_bitscores = bitscores[fragmentary_sequence_id]
+    for current_hmm_file in hmms:
+        current_sum = 0.0
+        for compare_to_hmm_file in hmms:
+            current_sum += 2**(float(current_hmm_bitscores[compare_to_hmm_file]) - float(current_hmm_bitscores[current_hmm_file]))
+        if(current_sum != 0):
+            hmm_weights[current_hmm_file] = 1 / current_sum
+        else:
+            hmm_weights[current_hmm_file] = 0
+
+    is_hmm_weights_all_zero = True
+    for hmm_weight_index in hmm_weights:
+        if(hmm_weights[hmm_weight_index] != 0):
+            is_hmm_weights_all_zero = False
+    if(is_hmm_weights_all_zero):
+        for hmm_weight_index in hmm_weights:
+            hmm_weights[hmm_weight_index] = 1 / (len(hmm_weights))
+    # print("uncorrected hmm weights for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
+    # pp.pprint(hmm_weights)
+
+    hmm_weights_tuple_arr = []
+    for hmm_weight_index in hmm_weights:
+        hmm_weights_tuple_arr.append((hmm_weight_index, hmm_weights[hmm_weight_index]))
+    hmm_weights_tuple_arr.sort(key=lambda x: x[1], reverse=True)
+    pp.pprint(hmm_weights_tuple_arr)
+    top_hmm_index = hmm_weights_tuple_arr[0][0]
+    print("top hmm for sequnece " + str(fragmentary_sequence_id) + " is " + str(top_hmm_index))
+    top_hmm = hmms[top_hmm_index]
+
+    output_hmm = {}
+    for column_index in range(len(fragmentary_sequence) + 1):
+        output_hmm[column_index] = {
+            "match": [],
+            "insertion": [],
+            "insert_loop": 0,
+            "self_match_to_insert": 0,
+            "transition": {
+            },
+        }
+        next_column = column_index + 1
+        if(column_index == 0):
+            output_hmm[column_index]["insertion"] = top_hmm["insertion"][column_index]
+            output_hmm[column_index]["transition"][next_column] = top_hmm["transition"][column_index]
+            output_hmm[column_index]["insert_loop"] = top_hmm["transition"][column_index][4]
+            output_hmm[column_index]["self_match_to_insert"] = top_hmm["transition"][column_index][1]
+        elif(column_index == len(fragmentary_sequence)):
+            output_hmm[column_index]["match"] = top_hmm["match"][column_index]
+            output_hmm[column_index]["insertion"] = top_hmm["insertion"][column_index]
+            output_hmm[column_index]["transition"][total_columns + 1] = top_hmm["transition"][column_index]
+            output_hmm[column_index]["insert_loop"] = top_hmm["transition"][column_index][4]
+            output_hmm[column_index]["self_match_to_insert"] = top_hmm["transition"][column_index][1]
+        else:
+            output_hmm[column_index]["match"] = top_hmm["match"][column_index]
+            output_hmm[column_index]["insertion"] = top_hmm["insertion"][column_index]
+            output_hmm[column_index]["transition"][next_column] = top_hmm["transition"][column_index]
+            output_hmm[column_index]["insert_loop"] = top_hmm["transition"][column_index][4]
+            output_hmm[column_index]["self_match_to_insert"] = top_hmm["transition"][column_index][1]
+    return output_hmm
+
 def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix):
     # print("the input hmms are")
     # pp.pprint(hmms)
+    hmm_freq_dict = {}
 
     backbone_records = SeqIO.to_dict(SeqIO.parse(backbone_alignment, "fasta"))
     total_columns = None
@@ -599,9 +791,6 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
             current_hmm_mapping = mappings[current_hmm_index]
             if(backbone_state_index in current_hmm_mapping):
                 current_states_probabilities[current_hmm_index] = current_hmm
-        # if(backbone_state_index == 2566):
-            # print("In state " + str(backbone_state_index) + ", there are " + str(len(current_states_probabilities)) + " hmms that have a match state")
-            # pp.pprint(current_states_probabilities.keys())
 
         for current_hmm_file in current_states_probabilities:
             current_sum = 0.0
@@ -620,8 +809,41 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
         if(is_hmm_weights_all_zero):
             for hmm_weight_index in hmm_weights:
                 hmm_weights[hmm_weight_index] = 1 / (len(hmm_weights))
-        # print("hmm weights for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
-        # pp.pprint(hmm_weights)
+        print("uncorrected hmm weights for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
+        pp.pprint(hmm_weights)
+
+        hmm_weights_tuple_arr = []
+        for hmm_weight_index in hmm_weights:
+            hmm_weights_tuple_arr.append((hmm_weight_index, hmm_weights[hmm_weight_index]))
+        hmm_weights_tuple_arr.sort(key=lambda x: x[1], reverse=True)
+        print("hmm tuple arr for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
+        pp.pprint(hmm_weights_tuple_arr)
+
+        # num_hmms_top_hit = 1
+        num_hmms_top_hit = len(hmm_weights_tuple_arr)
+        hmm_weights = {}
+        hmm_weight_value_sum = 0.0
+        # TODO: num hmms > len(hmm_weights_tuple_arr) then what?
+        for hmm_weight_index,hmm_weight_value in hmm_weights_tuple_arr[:num_hmms_top_hit]:
+            hmm_weights[hmm_weight_index] = hmm_weight_value
+            hmm_weight_value_sum += hmm_weight_value
+        # note: 0.0 would happen if the top hit is zero
+        # if the top hit is zero, then we should set everything to be 1 / len(hmm_weights)
+        for hmm_weight_index in hmm_weights:
+            if(hmm_weight_value_sum == 0.0):
+                hmm_weights[hmm_weight_index] = 1 / len(hmm_weights)
+            else:
+                hmm_weights[hmm_weight_index] /= hmm_weight_value_sum
+
+        print("corrected hmm weights for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
+        pp.pprint(hmm_weights)
+        for hmm_weight_index in hmm_weights:
+            if(hmm_weight_index not in hmm_freq_dict):
+                hmm_freq_dict[hmm_weight_index] = 0
+            hmm_freq_dict[hmm_weight_index] += 1
+        pp.pprint(hmm_freq_dict)
+
+        # if(DEBUG):
         npt.assert_almost_equal(sum(hmm_weights.values()), 1)
 
         if(backbone_state_index == 0):
@@ -647,48 +869,29 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
                     output_hmm[backbone_state_index]["transition"][corresponding_next_backbone_state] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm]
                 output_hmm[backbone_state_index]["insert_loop"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm][4]
                 output_hmm[backbone_state_index]["self_match_to_insert"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm][1]
-                # print(str(backbone_state_index) + " to " + str(corresponding_next_backbone_state))
         elif(backbone_state_index == total_columns):
-            # this has a transition to the end state and is the last full column of states
             for current_hmm_file in hmm_weights:
                 if(backbone_state_index not in mappings[current_hmm_file]):
                     continue
                 current_state_in_hmm = mappings[current_hmm_file][backbone_state_index]
-                # if(output_hmm[backbone_state_index]["match"] == []):
                 if(len(output_hmm[backbone_state_index]["match"]) == 0):
                     output_hmm[backbone_state_index]["match"] = hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["match"][current_state_in_hmm]
                 else:
                     output_hmm[backbone_state_index]["match"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["match"][current_state_in_hmm]
 
-                # if(output_hmm[backbone_state_index]["insertion"] == []):
                 if(len(output_hmm[backbone_state_index]["insertion"]) == 0):
                     output_hmm[backbone_state_index]["insertion"] = hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["insertion"][current_state_in_hmm]
                 else:
                     output_hmm[backbone_state_index]["insertion"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["insertion"][current_state_in_hmm]
 
-                # print(current_states_probabilities[current_hmm_file]["transition"])
                 if(total_columns + 1 not in output_hmm[backbone_state_index]["transition"]):
                     output_hmm[backbone_state_index]["transition"][total_columns + 1] = hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm]
                 else:
                     output_hmm[backbone_state_index]["transition"][total_columns + 1] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm]
                 output_hmm[backbone_state_index]["insert_loop"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm][4]
                 output_hmm[backbone_state_index]["self_match_to_insert"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm][1]
-
-                # print(str(backbone_state_index) + " to " + str(corresponding_next_backbone_state))
-                # if(backbone_state_index == 2566):
-                #     print("hmmfile: " + str(current_hmm_file))
-                #     print("1whole row")
-                #     pp.pprint(output_hmm[backbone_state_index]["transition"][total_columns + 1])
-                #     print("1currently adding")
-                #     pp.pprint(current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm])
-                #     print("1with weights")
-                #     pp.pprint(hmm_weights[current_hmm_file])
-                #     print("1total weights is ")
-                #     pp.pprint(hmm_weights)
         else:
-            # print("backbone state index: " + str(backbone_state_index))
             for current_hmm_file in hmm_weights:
-                # print("current hmm file: " + str(current_hmm_file))
                 if(backbone_state_index not in mappings[current_hmm_file]):
                     continue
                 current_state_in_hmm = mappings[current_hmm_file][backbone_state_index]
@@ -697,18 +900,11 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
                 for state_index in mappings[current_hmm_file]:
                     if(mappings[current_hmm_file][state_index] == next_state_in_hmm):
                         corresponding_next_backbone_state = state_index
-                # if(corresponding_next_backbone_state == None):
-                    # corresponding_next_backbone_state = total_columns + 1 # this is the skip to the end state
-                # print("current state in hmm: " + str(current_state_in_hmm))
-                # print("corresponding (tranisitioning to) next backbone state index: " + str(corresponding_next_backbone_state))
-
-                # if(output_hmm[backbone_state_index]["match"] == []):
                 if(len(output_hmm[backbone_state_index]["match"]) == 0):
                     output_hmm[backbone_state_index]["match"] = hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["match"][current_state_in_hmm]
                 else:
                     output_hmm[backbone_state_index]["match"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["match"][current_state_in_hmm]
 
-                # if(output_hmm[backbone_state_index]["insertion"] == []):
                 if(len(output_hmm[backbone_state_index]["insertion"]) == 0):
                     output_hmm[backbone_state_index]["insertion"] = hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["insertion"][current_state_in_hmm]
                 else:
@@ -721,31 +917,6 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
 
                 output_hmm[backbone_state_index]["insert_loop"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm][4]
                 output_hmm[backbone_state_index]["self_match_to_insert"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm][1]
-                # DEBUG
-                # if(backbone_state_index == 2566 and corresponding_next_backbone_state == 2567):
-                #     print("hmmfile: " + str(current_hmm_file))
-                #     print("2566-2567whole row")
-                #     pp.pprint(output_hmm[backbone_state_index]["transition"][corresponding_next_backbone_state])
-                #     print("2566-2567currently adding")
-                #     pp.pprint(current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm])
-                #     print("2566-2567with weights")
-                #     pp.pprint(hmm_weights[current_hmm_file])
-                #     print("2566-2567total weights is ")
-                #     pp.pprint(hmm_weights)
-                # elif(backbone_state_index == 2566):
-                #     print("hmmfile: " + str(current_hmm_file))
-                #     print("2566-endwhole row")
-                #     pp.pprint(output_hmm[backbone_state_index]["transition"][corresponding_next_backbone_state])
-                #     print("2566-endcurrently adding")
-                #     pp.pprint(current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm])
-                #     print("2566-endwith weights")
-                #     pp.pprint(hmm_weights[current_hmm_file])
-                #     print("2566-endtotal weights is ")
-                #     pp.pprint(hmm_weights)
-
-                # print(str(backbone_state_index) + " to " + str(corresponding_next_backbone_state))
-                # print(-np.log(current_states_probabilities[current_hmm_file]["transition"][1]))
-        # print(-np.log(output_hmm[0][]["transition"]))
     return output_hmm
 
 def get_bitscores_helper(input_dir, num_hmms, input_profile_files, backbone_alignment, fragmentary_sequence_file, output_prefix):
@@ -817,7 +988,8 @@ def create_mappings_helper(input_fasta_filenames, backbone_alignment):
                     if key_so_far in current_mapping:
                         assert cumulative_mapping[key_so_far] == current_mapping[key_so_far]
             cumulative_mapping.update(current_mapping)
-        assert current_hmm_index not in match_state_mappings
+        if(DEBUG):
+            assert current_hmm_index not in match_state_mappings
         match_state_mappings[current_hmm_index] = cumulative_mapping
 
     for mapping_index,mapping in match_state_mappings.items():
@@ -828,7 +1000,8 @@ def create_mappings_helper(input_fasta_filenames, backbone_alignment):
             if(match_state_index > max_match_state_index):
                 max_match_state_index = match_state_index
             match_state_sum += match_state_index
-        assert match_state_sum == (max_match_state_index * (max_match_state_index + 1) / 2)
+        if(DEBUG):
+            assert match_state_sum == (max_match_state_index * (max_match_state_index + 1) / 2)
         # DEBUG TODO: comeback to this
         # DEBUG TODO: second note i think this is correct now
         match_state_mappings[mapping_index][total_columns + 1] = max_match_state_index + 1
