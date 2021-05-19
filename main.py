@@ -20,13 +20,14 @@ DEBUG = False
 def run_align_wrapper(args):
     return run_align(*args)
 
-def run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix):
+def run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, equal_probabilities):
     output_hmm = get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)
     # output_hmm = get_probabilities_top_1_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)
     # print("the output hmm for sequence " + str(fragmentary_sequence_id) + " is")
     # pp.pprint(output_hmm)
     adjacency_matrix,emission_probabilities,transition_probabilities,alphabet = get_matrices(output_hmm, input_dir, backbone_alignment, output_prefix)
-    adjacency_matrix,transition_probabilities = add_equal_entry_exit_probabilities(adjacency_matrix,transition_probabilities)
+    if(equal_probabilities):
+        adjacency_matrix,transition_probabilities = add_equal_entry_exit_probabilities(adjacency_matrix,transition_probabilities)
     # adjacency_matrix,emission_probabilities,transition_probabilities,alphabet = get_matrices_top_1(output_hmm, input_dir, backbone_alignment, output_prefix)
     # print("adjacency matrix for sequence " + str(fragmentary_sequence_id) + " is")
     # with np.printoptions(suppress=True, linewidth=np.inf):
@@ -50,11 +51,12 @@ def run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, frag
 @click.option("--output-prefix", required=True, type=click.Path(), help="Output prefix")
 @click.option("--input-type", required=True, type=click.Choice(["custom", "sepp", "upp"]), help="The type of input")
 @click.option("--num-processes", required=False, type=int, default=1, help="Number of Processes")
+@click.option("--equal-probabilities", required=False, is_flag=True, help="Whether to have equal enty/exit probabilities")
 @click.option("--debug", required=False, is_flag=True, help="Whether to run in debug mode or not")
-def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, debug):
+def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, equal_probabilities, debug):
     if(debug):
         DEBUG = True
-    merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes)
+    merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, equal_probabilities)
 
 def custom_helper(input_dir, output_prefix):
     num_hmms = len(list(glob.glob(input_dir + "/input_*.fasta")))
@@ -88,7 +90,7 @@ def generic_helper(input_dir, num_hmms, input_profile_files, input_sequence_file
     hmms = read_hmms(input_profile_files)
     return bitscores,hmms
 
-def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes):
+def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, equal_probabilities):
     DEBUG = True
     mappings = None
     bitscores = None
@@ -114,13 +116,15 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
         build_hmm_profiles(input_dir, mappings, output_prefix)
 
     bitscores,hmms = generic_helper(input_dir, num_hmms, input_profile_files, input_sequence_files, backbone_alignment, fragmentary_sequence_file, mappings, output_prefix)
+    print("Bitscores")
+    print(bitscores)
 
     run_align_args = []
     if(num_processes > 1):
         for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
             fragmentary_sequence = fragmentary_sequence_record.seq
             fragmentary_sequence_id = fragmentary_sequence_record.id
-            run_align_args.append((input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix))
+            run_align_args.append((input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, equal_probabilities))
         aligned_results = None
 
         with Pool(processes=num_processes) as pool:
@@ -133,7 +137,7 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
         for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
             fragmentary_sequence = fragmentary_sequence_record.seq
             fragmentary_sequence_id = fragmentary_sequence_record.id
-            _,aligned_sequences,backtraced_states = run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)
+            _,aligned_sequences,backtraced_states = run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, equal_probabilities)
             aligned_sequences_dict[fragmentary_sequence_id] = aligned_sequences
             backtraced_states_dict[fragmentary_sequence_id] = backtraced_states
 
@@ -397,6 +401,12 @@ def run_viterbi_log_vectorized(adjacency_matrix, emission_probabilities, transit
             elif(adjacency_matrix[previous_state_in_sequence][current_state] == 1):
                 aligned_sequence += current_fragmentary_sequence[current_sequence_index - 1].upper()
             else:
+                sys.stderr.write(str(previous_state_in_sequence))
+                sys.stderr.write("\n")
+                sys.stderr.write(str(current_state))
+                sys.stderr.write("\n")
+                sys.stderr.write(str(adjacency_matrix[previous_state_in_sequence][current_state]))
+                sys.stderr.write("\n")
                 raise Exception("Illegal transition")
         elif(current_state != 0 and current_state != len(emission_probabilities) - 1):
             aligned_sequence += "-"
@@ -812,6 +822,7 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
         print("uncorrected hmm weights for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
         pp.pprint(hmm_weights)
 
+        '''code for filtering
         hmm_weights_tuple_arr = []
         for hmm_weight_index in hmm_weights:
             hmm_weights_tuple_arr.append((hmm_weight_index, hmm_weights[hmm_weight_index]))
@@ -819,8 +830,8 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
         print("hmm tuple arr for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
         pp.pprint(hmm_weights_tuple_arr)
 
-        # num_hmms_top_hit = 1
-        num_hmms_top_hit = len(hmm_weights_tuple_arr)
+        num_hmms_top_hit = 5
+        # num_hmms_top_hit = len(hmm_weights_tuple_arr)
         hmm_weights = {}
         hmm_weight_value_sum = 0.0
         # TODO: num hmms > len(hmm_weights_tuple_arr) then what?
@@ -837,11 +848,11 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
 
         print("corrected hmm weights for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
         pp.pprint(hmm_weights)
+        '''
         for hmm_weight_index in hmm_weights:
             if(hmm_weight_index not in hmm_freq_dict):
                 hmm_freq_dict[hmm_weight_index] = 0
             hmm_freq_dict[hmm_weight_index] += 1
-        pp.pprint(hmm_freq_dict)
 
         # if(DEBUG):
         npt.assert_almost_equal(sum(hmm_weights.values()), 1)
@@ -917,15 +928,17 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
 
                 output_hmm[backbone_state_index]["insert_loop"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm][4]
                 output_hmm[backbone_state_index]["self_match_to_insert"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm][1]
+    pp.pprint(hmm_freq_dict)
     return output_hmm
 
 def get_bitscores_helper(input_dir, num_hmms, input_profile_files, backbone_alignment, fragmentary_sequence_file, output_prefix):
     hmm_bitscores = {}
+    string_infinity = "9" * 100
     for current_hmm_index,current_input_file in enumerate(input_profile_files):
         with open(output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.out", "w") as stdout_f:
             with open(output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.err", "w") as stderr_f:
                 current_search_file = output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.output"
-                subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmsearch", "--noali", "--cpu", "1", "-o", current_search_file, "-E", "99999999999", "--max", current_input_file,fragmentary_sequence_file], stdout=stdout_f, stderr=stderr_f)
+                subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmsearch", "--noali", "--cpu", "1", "-o", current_search_file, "-E", string_infinity, "--domE", string_infinity, "--max", current_input_file,fragmentary_sequence_file], stdout=stdout_f, stderr=stderr_f)
 
     for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
         current_fragmentary_sequence = fragmentary_sequence_record.seq
@@ -933,18 +946,20 @@ def get_bitscores_helper(input_dir, num_hmms, input_profile_files, backbone_alig
         for current_hmm_index in range(num_hmms):
             current_search_file = output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.output"
             with open(current_search_file, "r") as f:
-                count_from_sequence_id = 0
-                current_sequence_id_encountered = False
+                count_from_score_section_start = 0
+                score_section_start = False
                 for line in f:
-                    if("No") in line:
-                        break
-                    if(current_sequence_id_encountered):
-                        count_from_sequence_id += 1
-                    if(count_from_sequence_id == 3):
-                        current_hmm_bitscores[current_hmm_index] = line.split()[2]
-                        break
-                    if(">> " + fragmentary_sequence_record.id in line):
-                        current_sequence_id_encountered = True
+                    if(score_section_start):
+                        current_line_arr = line.split()
+                        if(len(current_line_arr) == 9):
+                            if(current_line_arr[8] == fragmentary_sequence_record.id):
+                                current_hmm_bitscores[current_hmm_index] = current_line_arr[1]
+                                break
+                    if("Scores for complete sequences"):
+                        score_section_start = True
+
+        # if(len(current_hmm_bitscores) !=  num_hmms):
+            # raise Exception("Not all hmms reported bitscores for fragmentary sequence " + fragmentary_sequence_record.id)
         hmm_bitscores[fragmentary_sequence_record.id] = current_hmm_bitscores
     return hmm_bitscores
 
