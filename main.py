@@ -20,12 +20,12 @@ DEBUG = False
 def run_align_wrapper(args):
     return run_align(*args)
 
-def run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, equal_probabilities):
+def run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, model, equal_probabilities):
     output_hmm = get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)
     # output_hmm = get_probabilities_top_1_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)
     # print("the output hmm for sequence " + str(fragmentary_sequence_id) + " is")
     # pp.pprint(output_hmm)
-    adjacency_matrix,emission_probabilities,transition_probabilities,alphabet = get_matrices(output_hmm, input_dir, backbone_alignment, output_prefix)
+    adjacency_matrix,emission_probabilities,transition_probabilities,alphabet = get_matrices(output_hmm, input_dir, backbone_alignment, model, output_prefix)
     if(equal_probabilities):
         adjacency_matrix,transition_probabilities = add_equal_entry_exit_probabilities(adjacency_matrix,transition_probabilities)
     # adjacency_matrix,emission_probabilities,transition_probabilities,alphabet = get_matrices_top_1(output_hmm, input_dir, backbone_alignment, output_prefix)
@@ -52,11 +52,12 @@ def run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, frag
 @click.option("--input-type", required=True, type=click.Choice(["custom", "sepp", "upp"]), help="The type of input")
 @click.option("--num-processes", required=False, type=int, default=1, help="Number of Processes")
 @click.option("--equal-probabilities", required=False, is_flag=True, help="Whether to have equal enty/exit probabilities")
+@click.option("--model", required=True, type=click.Choice(["DNA", "RNA"]), help="DNA or RNA analysis")
 @click.option("--debug", required=False, is_flag=True, help="Whether to run in debug mode or not")
-def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, equal_probabilities, debug):
+def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, equal_probabilities, model, debug):
     if(debug):
         DEBUG = True
-    merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, equal_probabilities)
+    merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, model, equal_probabilities)
 
 def custom_helper(input_dir, output_prefix):
     num_hmms = len(list(glob.glob(input_dir + "/input_*.fasta")))
@@ -90,7 +91,7 @@ def generic_helper(input_dir, num_hmms, input_profile_files, input_sequence_file
     hmms = read_hmms(input_profile_files)
     return bitscores,hmms
 
-def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, equal_probabilities):
+def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, model, equal_probabilities):
     DEBUG = True
     mappings = None
     bitscores = None
@@ -111,8 +112,11 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
         print(input_type)
         raise Exception("Unsupported mode")
     mappings = create_mappings_helper(input_sequence_files, backbone_alignment)
+    print("mappings")
+    pp.pprint(mappings)
 
     if(input_type == "custom"):
+        print("type is custom")
         build_hmm_profiles(input_dir, mappings, output_prefix)
 
     bitscores,hmms = generic_helper(input_dir, num_hmms, input_profile_files, input_sequence_files, backbone_alignment, fragmentary_sequence_file, mappings, output_prefix)
@@ -124,7 +128,7 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
         for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
             fragmentary_sequence = fragmentary_sequence_record.seq
             fragmentary_sequence_id = fragmentary_sequence_record.id
-            run_align_args.append((input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, equal_probabilities))
+            run_align_args.append((input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, model, equal_probabilities))
         aligned_results = None
 
         with Pool(processes=num_processes) as pool:
@@ -137,7 +141,7 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
         for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
             fragmentary_sequence = fragmentary_sequence_record.seq
             fragmentary_sequence_id = fragmentary_sequence_record.id
-            _,aligned_sequences,backtraced_states = run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, equal_probabilities)
+            _,aligned_sequences,backtraced_states = run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, model, equal_probabilities)
             aligned_sequences_dict[fragmentary_sequence_id] = aligned_sequences
             backtraced_states_dict[fragmentary_sequence_id] = backtraced_states
 
@@ -418,7 +422,7 @@ def run_viterbi_log_vectorized(adjacency_matrix, emission_probabilities, transit
     return aligned_sequence,backtraced_states
 
 def get_matrices_top_1(output_hmm, input_dir, backbone_alignment, output_prefix):
-    alphabet = ["A", "C", "G", "T"]
+    alphabet = ["A", "C", "G", "U"]
     backbone_records = SeqIO.to_dict(SeqIO.parse(backbone_alignment, "fasta"))
     total_columns = len(output_hmm) - 1
     num_states = (3 * total_columns) + 2 + 1
@@ -550,8 +554,13 @@ def add_equal_entry_exit_probabilities(adjacency_matrix, transition_probabilitie
 
     return new_adjacency_matrix,new_transition_probabilities
 
-def get_matrices(output_hmm, input_dir, backbone_alignment, output_prefix):
-    alphabet = ["A", "C", "G", "T"]
+def get_matrices(output_hmm, input_dir, backbone_alignment, model, output_prefix):
+    alphabet = None
+    if(model == "DNA"):
+        alphabet = ["A", "C", "G", "T"]
+    elif(model == "RNA"):
+        alphabet = ["A", "C", "G", "U"]
+
     backbone_records = SeqIO.to_dict(SeqIO.parse(backbone_alignment, "fasta"))
     total_columns = None
     for record in backbone_records:
@@ -685,6 +694,7 @@ def build_hmm_profiles(input_dir, mappings, output_prefix):
             with open(output_prefix + "/" + str(current_hmm_index) + "-hmmbuild.err", "w") as stderr_f:
                 current_input_file = input_dir + "/input_" + str(current_hmm_index) + ".fasta"
                 current_output_file = output_prefix + "/" + str(current_hmm_index) + "-hmmbuild.profile"
+                print("calling hmmbuild with output at " + current_output_file)
                 subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmbuild", "--cpu", "1", "--dna", "--ere", "0.59", "--symfrac", "0.0", "--informat", "afa", current_output_file, current_input_file], stdout=stdout_f, stderr=stderr_f)
 
 def read_hmms(input_profile_files):
@@ -964,6 +974,10 @@ def get_bitscores_helper(input_dir, num_hmms, input_profile_files, backbone_alig
     return hmm_bitscores
 
 def create_mappings_helper(input_fasta_filenames, backbone_alignment):
+    print("input fasta files")
+    print(input_fasta_filenames)
+    print("backbone alignment")
+    print(backbone_alignment)
     num_hmms = len(input_fasta_filenames)
     hmm_weights = {}
     backbone_records = SeqIO.to_dict(SeqIO.parse(backbone_alignment, "fasta"))
