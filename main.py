@@ -53,11 +53,12 @@ def run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, frag
 @click.option("--num-processes", required=False, type=int, default=1, help="Number of Processes")
 @click.option("--equal-probabilities", required=False, is_flag=True, help="Whether to have equal enty/exit probabilities")
 @click.option("--model", required=True, type=click.Choice(["DNA", "RNA"]), help="DNA or RNA analysis")
+@click.option("--output-format", required=True, type=click.Choice(["FASTA", "A3M"]), help="FASTA or A3M format for the output alignment")
 @click.option("--debug", required=False, is_flag=True, help="Whether to run in debug mode or not")
-def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, equal_probabilities, model, debug):
+def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, equal_probabilities, model, output_format, debug):
     if(debug):
         DEBUG = True
-    merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, model, equal_probabilities)
+    merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, model, output_format, equal_probabilities)
 
 def custom_helper(input_dir, output_prefix):
     num_hmms = len(list(glob.glob(input_dir + "/input_*.fasta")))
@@ -91,7 +92,7 @@ def generic_helper(input_dir, num_hmms, input_profile_files, input_sequence_file
     hmms = read_hmms(input_profile_files)
     return bitscores,hmms
 
-def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, model, equal_probabilities):
+def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, model, output_format, equal_probabilities):
     DEBUG = True
     mappings = None
     bitscores = None
@@ -151,17 +152,25 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
     # pp.pprint(aligned_sequences_dict)
     # with np.printoptions(suppress=True, linewidth=np.inf):
         # print(aligned_sequences_dict)
-    merged_alignment = get_merged_alignments(aligned_sequences_dict, backtraced_states_dict, backbone_alignment)
+    merged_alignment = get_merged_alignments(aligned_sequences_dict, backtraced_states_dict, backbone_alignment, output_format)
     # NOTE: top 1
     # merged_alignment = get_merged_alignments_top_1(aligned_sequences_dict, backtraced_states_dict, backbone_alignment, mappings)
+    if(output_format == "FASTA"):
+        with open(output_prefix + "HMMerge.aligned.fasta", "w") as f:
+            for merged_aligned_sequence in merged_alignment:
+                if(merged_aligned_sequence != "backbone_indices"):
+                    f.write(">" + merged_aligned_sequence + "\n")
+                    f.write(merged_alignment[merged_aligned_sequence] + "\n")
 
-    with open(output_prefix + "HMMerge.aligned.fasta", "w") as f:
-        for merged_aligned_sequence in merged_alignment:
-            if(merged_aligned_sequence != "backbone_indices"):
-                f.write(">" + merged_aligned_sequence + "\n")
-                f.write(merged_alignment[merged_aligned_sequence] + "\n")
+        print("merged alignment is written to " + str(output_prefix) + "HMMerge.aligned.fasta")
+    elif(output_format == "A3M"):
+        with open(output_prefix + "HMMerge.aligned.a3m", "w") as f:
+            for merged_aligned_sequence in merged_alignment:
+                if(merged_aligned_sequence != "backbone_indices"):
+                    f.write(">" + merged_aligned_sequence + "\n")
+                    f.write(merged_alignment[merged_aligned_sequence] + "\n")
 
-    print("merged alignment is written to " + str(output_prefix) + "HMMerge.aligned.fasta")
+        print("merged alignment is written to " + str(output_prefix) + "HMMerge.aligned.a3m")
     pp.pprint(merged_alignment)
     # with np.printoptions(suppress=True, linewidth=np.inf):
         # print(merged_alignment)
@@ -223,7 +232,25 @@ def get_merged_alignments_top_1(aligned_sequences_dict, backtraced_states_dict, 
                     merged_alignment[aligned_sequence_id] = "".join(current_alignment_list)
     return merged_alignment
 
-def get_merged_alignments(aligned_sequences_dict, backtraced_states_dict, backbone_alignment):
+def get_merged_alignments(aligned_sequences_dict, backtraced_states_dict, backbone_alignment, output_format):
+    if(output_format == "FASTA"):
+        return get_merged_alignments_fasta(aligned_sequences_dict, backtraced_states_dict, backbone_alignment)
+    elif(output_format == "A3M"):
+        return get_merged_alignments_a3m(aligned_sequences_dict, backtraced_states_dict, backbone_alignment)
+
+def get_merged_alignments_a3m(aligned_sequences_dict, backtraced_states_dict, backbone_alignment):
+    merged_alignment = {}
+    num_columns = None
+    for backbone_sequence_record in SeqIO.parse(backbone_alignment, "fasta"):
+        if(num_columns == None):
+            num_columns = len(backbone_sequence_record)
+        merged_alignment[backbone_sequence_record.id] = str(backbone_sequence_record.seq)
+
+    for aligned_sequence_id,aligned_sequence in aligned_sequences_dict.items():
+        merged_alignment[aligned_sequence_id] = aligned_sequence
+    return merged_alignment
+
+def get_merged_alignments_fasta(aligned_sequences_dict, backtraced_states_dict, backbone_alignment):
     merged_alignment = {}
     num_columns = None
     for backbone_sequence_record in SeqIO.parse(backbone_alignment, "fasta"):
