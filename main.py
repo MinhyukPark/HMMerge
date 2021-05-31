@@ -112,19 +112,16 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
     else:
         print(input_type)
         raise Exception("Unsupported mode")
-    print("DEBUG SEQUENCEFILES")
-    print(input_sequence_files)
     mappings = create_mappings_helper(input_sequence_files, backbone_alignment)
-    print("mappings")
-    pp.pprint(mappings)
+    if(DEBUG):
+        print("mappings")
+        pp.pprint(mappings)
 
     if(input_type == "custom"):
         print("type is custom")
         build_hmm_profiles(input_dir, mappings, output_prefix)
 
     bitscores,hmms = generic_helper(input_dir, num_hmms, input_profile_files, input_sequence_files, backbone_alignment, fragmentary_sequence_file, mappings, output_prefix)
-    print("Bitscores")
-    print(bitscores)
 
     run_align_args = []
     if(num_processes > 1):
@@ -172,7 +169,7 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
                 f.write(merged_alignment[merged_aligned_sequence] + "\n")
 
         print("merged alignment is written to " + str(output_prefix) + "HMMerge.aligned.a3m")
-    pp.pprint(merged_alignment)
+    # pp.pprint(merged_alignment)
     # with np.printoptions(suppress=True, linewidth=np.inf):
         # print(merged_alignment)
 
@@ -808,6 +805,11 @@ def get_probabilities_helper(input_dir, hmms, input_sequence_files, backbone_ali
     print("the input hmms are")
     pp.pprint(hmms)
     hmm_freq_dict = {}
+    input_alignment_sizes = {}
+    for current_hmm_index,current_input_alignment in input_sequence_files.items():
+        input_alignment_sizes[current_hmm_index] = 0
+        for sequence_record in SeqIO.parse(current_input_alignment, "fasta"):
+            input_alignment_sizes[current_hmm_index] += 1
 
     backbone_records = SeqIO.to_dict(SeqIO.parse(backbone_alignment, "fasta"))
     total_columns = None
@@ -844,13 +846,23 @@ def get_probabilities_helper(input_dir, hmms, input_sequence_files, backbone_ali
         # current hmm_bitscores contains a map of HMM index to bitscores
         for current_hmm_file in current_states_probabilities:
             current_sum = 0.0
+            current_num_sequences = 0
             if(current_hmm_file in current_hmm_bitscores):
+                # for compare_to_hmm_file in current_states_probabilities:
+                    # if(compare_to_hmm_file in current_hmm_bitscores):
+                        # current_num_sequences += input_alignment_sizes[compare_to_hmm_file]
+                # print("current_num_sequences:" + str(current_num_sequences))
                 for compare_to_hmm_file in current_states_probabilities:
                     if(compare_to_hmm_file in current_hmm_bitscores):
-                        current_sum += 2**(float(current_hmm_bitscores[compare_to_hmm_file]) - float(current_hmm_bitscores[current_hmm_file]))
+                        # print(str(compare_to_hmm_file) + " has " + str(current_num_sequences) + " sequences")
+                        # print(str(compare_to_hmm_file) + " has " + str(current_hmm_bitscores[compare_to_hmm_file]) + " bitscore")
+                        current_sum += 2**(float(current_hmm_bitscores[compare_to_hmm_file]) - float(current_hmm_bitscores[current_hmm_file]) + np.log2(input_alignment_sizes[compare_to_hmm_file] / input_alignment_sizes[current_hmm_file]))
                 hmm_weights[current_hmm_file] = 1 / current_sum
             else:
                 hmm_weights[current_hmm_file] = 0
+
+        print("uncorrected hmm weights for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
+        pp.pprint(hmm_weights)
 
         is_hmm_weights_all_zero = True
         for hmm_weight_index in hmm_weights:
@@ -859,7 +871,7 @@ def get_probabilities_helper(input_dir, hmms, input_sequence_files, backbone_ali
         if(is_hmm_weights_all_zero):
             for hmm_weight_index in hmm_weights:
                 hmm_weights[hmm_weight_index] = 1 / (len(hmm_weights))
-        print("uncorrected hmm weights for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
+        print("zero corrected hmm weights for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
         pp.pprint(hmm_weights)
 
         '''code for filtering
@@ -1004,10 +1016,10 @@ def get_bitscores_helper(input_dir, num_hmms, input_profile_files, backbone_alig
     return hmm_bitscores
 
 def create_mappings_helper(input_fasta_filenames, backbone_alignment):
-    print("input fasta files")
-    print(input_fasta_filenames)
-    print("backbone alignment")
-    print(backbone_alignment)
+    # print("input fasta files")
+    # print(input_fasta_filenames)
+    # print("backbone alignment")
+    # print(backbone_alignment)
     num_hmms = len(input_fasta_filenames)
     hmm_weights = {}
     backbone_records = SeqIO.to_dict(SeqIO.parse(backbone_alignment, "fasta"))
