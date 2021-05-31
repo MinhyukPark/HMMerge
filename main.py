@@ -20,8 +20,8 @@ DEBUG = False
 def run_align_wrapper(args):
     return run_align(*args)
 
-def run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, model, equal_probabilities):
-    output_hmm = get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)
+def run_align(input_dir, hmms, input_sequence_files, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, model, equal_probabilities):
+    output_hmm = get_probabilities_helper(input_dir, hmms, input_sequence_files, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)
     # output_hmm = get_probabilities_top_1_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)
     # print("the output hmm for sequence " + str(fragmentary_sequence_id) + " is")
     # pp.pprint(output_hmm)
@@ -62,29 +62,29 @@ def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_
 
 def custom_helper(input_dir, output_prefix):
     num_hmms = len(list(glob.glob(input_dir + "/input_*.fasta")))
-    input_profile_files = []
-    input_sequence_files = []
+    input_profile_files = {}
+    input_sequence_files = {}
     for current_hmm_index in range(num_hmms):
-        input_profile_files.append(output_prefix + "/" + str(current_hmm_index) + "-hmmbuild.profile")
-        input_sequence_files.append(input_dir + "/input_" + str(current_hmm_index) + ".fasta")
+        input_profile_files[current_hmm_index] = output_prefix + "/" + str(current_hmm_index) + "-hmmbuild.profile"
+        input_sequence_files[current_hmm_index] = input_dir + "/input_" + str(current_hmm_index) + ".fasta"
     return num_hmms,input_profile_files,input_sequence_files
 
 def sepp_helper(input_dir):
     num_hmms = len(list(glob.glob(input_dir + "/P_*")))
-    input_profile_files = []
-    input_sequence_files = []
+    input_profile_files = {}
+    input_sequence_files = {}
     for current_hmm_index in range(num_hmms):
-        input_profile_files.append(list(glob.glob(input_dir + "/P_" + str(current_hmm_index) + "/A_" + str(current_hmm_index) + "_0/hmmbuild.model.*"))[0])
-        input_sequence_files.append(list(glob.glob(input_dir + "/P_" + str(current_hmm_index) + "/A_" + str(current_hmm_index) + "_0/hmmbuild.input.*.fasta"))[0])
+        input_profile_files[current_hmm_index] = list(glob.glob(input_dir + "/P_" + str(current_hmm_index) + "/A_" + str(current_hmm_index) + "_0/hmmbuild.model.*"))[0]
+        input_sequence_files[current_hmm_index] = list(glob.glob(input_dir + "/P_" + str(current_hmm_index) + "/A_" + str(current_hmm_index) + "_0/hmmbuild.input.*.fasta"))[0]
     return num_hmms,input_profile_files,input_sequence_files
 
 def upp_helper(input_dir):
     num_hmms = len(list(glob.glob(input_dir + "/P_0/A_*")))
-    input_profile_files = []
-    input_sequence_files = []
+    input_profile_files = {}
+    input_sequence_files = {}
     for current_hmm_index in range(num_hmms):
-        input_profile_files.append(list(glob.glob(input_dir + "/P_0/A_0_" + str(current_hmm_index) + "/hmmbuild.model.*"))[0])
-        input_sequence_files.append(list(glob.glob(input_dir + "/P_0/A_0_" + str(current_hmm_index) + "/hmmbuild.input.*.fasta"))[0])
+        input_profile_files[current_hmm_index] = list(glob.glob(input_dir + "/P_0/A_0_" + str(current_hmm_index) + "/hmmbuild.model.*"))[0]
+        input_sequence_files[current_hmm_index] = list(glob.glob(input_dir + "/P_0/A_0_" + str(current_hmm_index) + "/hmmbuild.input.*.fasta"))[0]
     return num_hmms,input_profile_files,input_sequence_files
 
 def generic_helper(input_dir, num_hmms, input_profile_files, input_sequence_files, backbone_alignment, fragmentary_sequence_file, mappings, output_prefix):
@@ -112,6 +112,8 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
     else:
         print(input_type)
         raise Exception("Unsupported mode")
+    print("DEBUG SEQUENCEFILES")
+    print(input_sequence_files)
     mappings = create_mappings_helper(input_sequence_files, backbone_alignment)
     print("mappings")
     pp.pprint(mappings)
@@ -129,7 +131,7 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
         for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
             fragmentary_sequence = fragmentary_sequence_record.seq
             fragmentary_sequence_id = fragmentary_sequence_record.id
-            run_align_args.append((input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, model, equal_probabilities))
+            run_align_args.append((input_dir, hmms, input_sequence_files, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, model, equal_probabilities))
         aligned_results = None
 
         with Pool(processes=num_processes) as pool:
@@ -142,7 +144,7 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
         for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
             fragmentary_sequence = fragmentary_sequence_record.seq
             fragmentary_sequence_id = fragmentary_sequence_record.id
-            _,aligned_sequences,backtraced_states = run_align(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, model, equal_probabilities)
+            _,aligned_sequences,backtraced_states = run_align(input_dir, hmms, input_sequence_files, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, model, equal_probabilities)
             aligned_sequences_dict[fragmentary_sequence_id] = aligned_sequences
             backtraced_states_dict[fragmentary_sequence_id] = backtraced_states
 
@@ -166,9 +168,8 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
     elif(output_format == "A3M"):
         with open(output_prefix + "HMMerge.aligned.a3m", "w") as f:
             for merged_aligned_sequence in merged_alignment:
-                if(merged_aligned_sequence != "backbone_indices"):
-                    f.write(">" + merged_aligned_sequence + "\n")
-                    f.write(merged_alignment[merged_aligned_sequence] + "\n")
+                f.write(">" + merged_aligned_sequence + "\n")
+                f.write(merged_alignment[merged_aligned_sequence] + "\n")
 
         print("merged alignment is written to " + str(output_prefix) + "HMMerge.aligned.a3m")
     pp.pprint(merged_alignment)
@@ -726,7 +727,7 @@ def build_hmm_profiles(input_dir, mappings, output_prefix):
 
 def read_hmms(input_profile_files):
     hmms = {}
-    for current_hmm_index,current_input_file in enumerate(input_profile_files):
+    for current_hmm_index,current_input_file in input_profile_files.items():
         current_hmm =None
         with HMMFile(current_input_file) as hmm_f:
             current_hmm = next(hmm_f)
@@ -803,9 +804,9 @@ def get_probabilities_top_1_helper(input_dir, hmms, backbone_alignment, fragment
             output_hmm[column_index]["self_match_to_insert"] = top_hmm["transition"][column_index][1]
     return output_hmm
 
-def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix):
-    # print("the input hmms are")
-    # pp.pprint(hmms)
+def get_probabilities_helper(input_dir, hmms, input_sequence_files, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix):
+    print("the input hmms are")
+    pp.pprint(hmms)
     hmm_freq_dict = {}
 
     backbone_records = SeqIO.to_dict(SeqIO.parse(backbone_alignment, "fasta"))
@@ -839,6 +840,8 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
             if(backbone_state_index in current_hmm_mapping):
                 current_states_probabilities[current_hmm_index] = current_hmm
 
+        # current states probabilities is a map HMM index to the actual hmm
+        # current hmm_bitscores contains a map of HMM index to bitscores
         for current_hmm_file in current_states_probabilities:
             current_sum = 0.0
             if(current_hmm_file in current_hmm_bitscores):
@@ -971,7 +974,7 @@ def get_probabilities_helper(input_dir, hmms, backbone_alignment, fragmentary_se
 def get_bitscores_helper(input_dir, num_hmms, input_profile_files, backbone_alignment, fragmentary_sequence_file, output_prefix):
     hmm_bitscores = {}
     string_infinity = "9" * 100
-    for current_hmm_index,current_input_file in enumerate(input_profile_files):
+    for current_hmm_index,current_input_file in input_profile_files.items():
         with open(output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.out", "w") as stdout_f:
             with open(output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.err", "w") as stderr_f:
                 current_search_file = output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.output"
@@ -1014,7 +1017,8 @@ def create_mappings_helper(input_fasta_filenames, backbone_alignment):
         break
 
     match_state_mappings = {} # from hmm_index to {map of backbone match state index to current input hmm build fasta's match state index}
-    for current_hmm_index,current_input_file in enumerate(input_fasta_filenames):
+    # for current_hmm_index,current_input_file in enumerate(input_fasta_filenames):
+    for current_hmm_index,current_input_file in input_fasta_filenames.items():
         cumulative_mapping = {}
         for current_record in SeqIO.parse(current_input_file, "fasta"):
             current_sequence = current_record.seq
@@ -1064,7 +1068,6 @@ def create_mappings_helper(input_fasta_filenames, backbone_alignment):
 
     for mapping_index,mapping in match_state_mappings.items():
         mapping[0] = 0
-
     return match_state_mappings
 
 

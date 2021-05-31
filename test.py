@@ -5,9 +5,9 @@ import shutil
 TEMP_OUTPUT_PREFIX = "./tmp/"
 
 def setup_mapping_inputs(test_root, num_subsets):
-    input_fasta_filenames = []
+    input_fasta_filenames = {}
     for i in range(num_subsets):
-        input_fasta_filenames.append(test_root + "input_" + str(i) + ".fasta")
+        input_fasta_filenames[i] = test_root + "input_" + str(i) + ".fasta"
     backbone_alignment = test_root + "backbone.fasta"
     return input_fasta_filenames,backbone_alignment
 
