@@ -20,8 +20,8 @@ DEBUG = False
 def run_align_wrapper(args):
     return run_align(*args)
 
-def run_align(input_dir, hmms, input_sequence_files, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, model, equal_probabilities):
-    output_hmm = get_probabilities_helper(input_dir, hmms, input_sequence_files, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)
+def run_align(input_dir, hmms, num_hmms, weighting_scheme, input_sequence_files, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, model, equal_probabilities):
+    output_hmm = get_probabilities_helper(input_dir, hmms, num_hmms, weighting_scheme, input_sequence_files, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)
     # output_hmm = get_probabilities_top_1_helper(input_dir, hmms, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix)
     # print("the output hmm for sequence " + str(fragmentary_sequence_id) + " is")
     # pp.pprint(output_hmm)
@@ -51,14 +51,16 @@ def run_align(input_dir, hmms, input_sequence_files, backbone_alignment, fragmen
 @click.option("--output-prefix", required=True, type=click.Path(), help="Output prefix")
 @click.option("--input-type", required=True, type=click.Choice(["custom", "sepp", "upp"]), help="The type of input")
 @click.option("--num-processes", required=False, type=int, default=1, help="Number of Processes")
+@click.option("--num-hmms", required=True, type=int, help="the number of Top HMMs to choose for merge, -1 for all HMMs")
+@click.option("--weighting-scheme", required=True, type=click.Choice(["bitscore", "bitscore+size"]), help="Weight HMMs using bitscores or bitscores and sizes")
 @click.option("--equal-probabilities", required=False, is_flag=True, help="Whether to have equal enty/exit probabilities")
 @click.option("--model", required=True, type=click.Choice(["DNA", "RNA"]), help="DNA or RNA analysis")
 @click.option("--output-format", required=True, type=click.Choice(["FASTA", "A3M"]), help="FASTA or A3M format for the output alignment")
 @click.option("--debug", required=False, is_flag=True, help="Whether to run in debug mode or not")
-def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, equal_probabilities, model, output_format, debug):
+def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, num_hmms, weighting_scheme, equal_probabilities, model, output_format, debug):
     if(debug):
         DEBUG = True
-    merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, model, output_format, equal_probabilities)
+    merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, num_hmms, weighting_scheme, model, output_format, equal_probabilities)
 
 def custom_helper(input_dir, output_prefix):
     num_hmms = len(list(glob.glob(input_dir + "/input_*.fasta")))
@@ -92,7 +94,7 @@ def generic_helper(input_dir, num_hmms, input_profile_files, input_sequence_file
     hmms = read_hmms(input_profile_files)
     return bitscores,hmms
 
-def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, model, output_format, equal_probabilities):
+def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, num_hmms, weighting_scheme, model, output_format, equal_probabilities):
     DEBUG = True
     mappings = None
     bitscores = None
@@ -128,7 +130,7 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
         for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
             fragmentary_sequence = fragmentary_sequence_record.seq
             fragmentary_sequence_id = fragmentary_sequence_record.id
-            run_align_args.append((input_dir, hmms, input_sequence_files, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, model, equal_probabilities))
+            run_align_args.append((input_dir, hmms, num_hmms, weighting_scheme, input_sequence_files, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, model, equal_probabilities))
         aligned_results = None
 
         with Pool(processes=num_processes) as pool:
@@ -141,7 +143,7 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
         for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
             fragmentary_sequence = fragmentary_sequence_record.seq
             fragmentary_sequence_id = fragmentary_sequence_record.id
-            _,aligned_sequences,backtraced_states = run_align(input_dir, hmms, input_sequence_files, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, model, equal_probabilities)
+            _,aligned_sequences,backtraced_states = run_align(input_dir, hmms, num_hmms, weighting_scheme, input_sequence_files, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix, model, equal_probabilities)
             aligned_sequences_dict[fragmentary_sequence_id] = aligned_sequences
             backtraced_states_dict[fragmentary_sequence_id] = backtraced_states
 
@@ -801,7 +803,7 @@ def get_probabilities_top_1_helper(input_dir, hmms, backbone_alignment, fragment
             output_hmm[column_index]["self_match_to_insert"] = top_hmm["transition"][column_index][1]
     return output_hmm
 
-def get_probabilities_helper(input_dir, hmms, input_sequence_files, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix):
+def get_probabilities_helper(input_dir, hmms, num_hmms, weighting_scheme, input_sequence_files, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix):
     print("the input hmms are")
     pp.pprint(hmms)
     hmm_freq_dict = {}
@@ -856,7 +858,10 @@ def get_probabilities_helper(input_dir, hmms, input_sequence_files, backbone_ali
                     if(compare_to_hmm_file in current_hmm_bitscores):
                         # print(str(compare_to_hmm_file) + " has " + str(current_num_sequences) + " sequences")
                         # print(str(compare_to_hmm_file) + " has " + str(current_hmm_bitscores[compare_to_hmm_file]) + " bitscore")
-                        current_sum += 2**(float(current_hmm_bitscores[compare_to_hmm_file]) - float(current_hmm_bitscores[current_hmm_file]) + np.log2(input_alignment_sizes[compare_to_hmm_file] / input_alignment_sizes[current_hmm_file]))
+                        if(weighting_scheme == "bitscore"):
+                            current_sum += 2**(float(current_hmm_bitscores[compare_to_hmm_file]) - float(current_hmm_bitscores[current_hmm_file]))
+                        elif(weighting_scheme == "bitscore+size"):
+                            current_sum += 2**(float(current_hmm_bitscores[compare_to_hmm_file]) - float(current_hmm_bitscores[current_hmm_file]) + np.log2(input_alignment_sizes[compare_to_hmm_file] / input_alignment_sizes[current_hmm_file]))
                 hmm_weights[current_hmm_file] = 1 / current_sum
             else:
                 hmm_weights[current_hmm_file] = 0
@@ -869,12 +874,14 @@ def get_probabilities_helper(input_dir, hmms, input_sequence_files, backbone_ali
             if(hmm_weights[hmm_weight_index] != 0):
                 is_hmm_weights_all_zero = False
         if(is_hmm_weights_all_zero):
+            # for hmm_weight_index in current_states_probabilities:
+                # hmm_weights[hmm_weight_index] = 1 / len(current_states_probabilities)
             for hmm_weight_index in hmm_weights:
                 hmm_weights[hmm_weight_index] = 1 / (len(hmm_weights))
         print("zero corrected hmm weights for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
         pp.pprint(hmm_weights)
+        npt.assert_almost_equal(sum(hmm_weights.values()), 1)
 
-        '''code for filtering
         hmm_weights_tuple_arr = []
         for hmm_weight_index in hmm_weights:
             hmm_weights_tuple_arr.append((hmm_weight_index, hmm_weights[hmm_weight_index]))
@@ -882,8 +889,9 @@ def get_probabilities_helper(input_dir, hmms, input_sequence_files, backbone_ali
         print("hmm tuple arr for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
         pp.pprint(hmm_weights_tuple_arr)
 
-        num_hmms_top_hit = 5
-        # num_hmms_top_hit = len(hmm_weights_tuple_arr)
+        num_hmms_top_hit = num_hmms
+        if(num_hmms_top_hit == -1 or num_hmms_top_hit > len(hmm_weights_tuple_arr)):
+            num_hmms_top_hit = len(hmm_weights_tuple_arr)
         hmm_weights = {}
         hmm_weight_value_sum = 0.0
         # TODO: num hmms > len(hmm_weights_tuple_arr) then what?
@@ -900,7 +908,7 @@ def get_probabilities_helper(input_dir, hmms, input_sequence_files, backbone_ali
 
         print("corrected hmm weights for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
         pp.pprint(hmm_weights)
-        '''
+
         for hmm_weight_index in hmm_weights:
             if(hmm_weight_index not in hmm_freq_dict):
                 hmm_freq_dict[hmm_weight_index] = 0
