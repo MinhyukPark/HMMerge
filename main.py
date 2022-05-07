@@ -1,6 +1,7 @@
 import glob
 import math
 from multiprocessing import Pool
+from scipy.sparse import lil_matrix
 import numpy as np
 import numpy.testing as npt
 import os
@@ -16,6 +17,7 @@ pp = pprint.PrettyPrinter(indent=4)
 np.set_printoptions(threshold=np.inf)
 
 DEBUG = False
+VERBOSE = False
 
 def run_align_wrapper(args):
     return run_align(*args)
@@ -57,9 +59,14 @@ def run_align(input_dir, hmms, support_value, weighting_scheme, input_sequence_f
 @click.option("--model", required=True, type=click.Choice(["DNA", "RNA"]), help="DNA or RNA analysis")
 @click.option("--output-format", required=True, type=click.Choice(["FASTA", "A3M"]), help="FASTA or A3M format for the output alignment")
 @click.option("--debug", required=False, is_flag=True, help="Whether to run in debug mode or not")
-def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, support_value, weighting_scheme, equal_probabilities, model, output_format, debug):
+@click.option("--verbose", required=False, is_flag=True, help="Whether to run in verbose mode or not")
+def merge_hmms(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, support_value, weighting_scheme, equal_probabilities, model, output_format, debug, verbose):
+    global DEBUG
+    global VERBOSE
     if(debug):
         DEBUG = True
+    if(verbose):
+        VERBOSE = True
     merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, support_value, weighting_scheme, model, output_format, equal_probabilities)
 
 def custom_helper(input_dir, output_prefix):
@@ -95,7 +102,6 @@ def generic_helper(input_dir, num_hmms, input_profile_files, input_sequence_file
     return bitscores,hmms
 
 def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, output_prefix, input_type, num_processes, support_value, weighting_scheme, model, output_format, equal_probabilities):
-    DEBUG = True
     mappings = None
     bitscores = None
     aligned_sequences_dict = {}
@@ -115,7 +121,7 @@ def merge_hmms_helper(input_dir, backbone_alignment, fragmentary_sequence_file, 
         print(input_type)
         raise Exception("Unsupported mode")
     mappings = create_mappings_helper(input_sequence_files, backbone_alignment)
-    if(DEBUG):
+    if(VERBOSE):
         print("mappings")
         pp.pprint(mappings)
 
@@ -285,7 +291,6 @@ def get_merged_alignments_fasta(aligned_sequences_dict, backtraced_states_dict, 
             # print(aligned_sequence)
             # print(merged_alignment[aligned_sequence])
             # print(len(merged_alignment[aligned_sequence]))
-            if(DEBUG):
                 assert alignment_length == len(merged_alignment[aligned_sequence])
 
     # time to add insertion columns
@@ -336,15 +341,15 @@ def run_viterbi_log_vectorized(adjacency_matrix, emission_probabilities, transit
     backtraced_states = []
     aligned_sequence = ""
     current_fragmentary_sequence = fragmentary_sequence
-    lookup_table = np.zeros((len(current_fragmentary_sequence) + 1, len(emission_probabilities)))
+    lookup_table = np.zeros((len(current_fragmentary_sequence) + 1, emission_probabilities.shape[0]), dtype="float32")
     lookup_table.fill(np.NINF)
     backtrace_table = np.empty(lookup_table.shape, dtype=object)
     backtrace_table.fill((-3,-3))
     lookup_table[0,0] = 0
     backtrace_table[0,0] = (-1,-1)
-    num_states = len(emission_probabilities)
+    num_states = emission_probabilities.shape[0]
     # [0,j] should be -inf but i'm making everything -inf in the initilazation
-    for state_index in range(len(emission_probabilities)):
+    for state_index in range(emission_probabilities.shape[0]):
         if(state_index % 2500 == 0):
             print("Viterbi in progress - state index: " + str(state_index) + "/" + str(num_states))
         for sequence_index in range(len(current_fragmentary_sequence) + 1):
@@ -365,7 +370,14 @@ def run_viterbi_log_vectorized(adjacency_matrix, emission_probabilities, transit
                 if(DEBUG):
                     for search_state_index in range(state_index + 1):
                         if(adjacency_matrix[search_state_index,state_index] == 0):
-                            if(transition_probabilities[search_state_index,state_index] != np.NINF):
+                            if(transition_probabilities[search_state_index,state_index] > np.NINF): # was np.NINF
+                                sys.stderr.write(str(search_state_index))
+                                sys.stderr.write("\n")
+                                sys.stderr.write(str(state_index))
+                                sys.stderr.write("\n")
+                                sys.stderr.write(str(transition_probabilities[search_state_index,state_index]))
+                                sys.stderr.write("\n")
+                                sys.stderr.flush()
                                 raise Exception("No edge but transition probability exists")
                             continue
             else:
@@ -381,17 +393,17 @@ def run_viterbi_log_vectorized(adjacency_matrix, emission_probabilities, transit
                 if(DEBUG):
                     for search_state_index in range(state_index):
                         if(adjacency_matrix[search_state_index,state_index] == 0):
-                            if(transition_probabilities[search_state_index,state_index] != np.NINF):
+                            if(transition_probabilities[search_state_index,state_index] > np.NINF): # was np.NINF
                                 raise Exception("No edge but transition probability exists")
                             continue
     print("Viterbi in progress - state index: " + str(num_states) + "/" + str(num_states))
-    if(DEBUG):
+    if(VERBOSE):
         # note: debug with print
         readable_table = np.around(lookup_table, decimals=3)
-        for state_index in range(len(emission_probabilities)):
+        for state_index in range(emission_probabilities.shape[0]):
             pp.pprint(readable_table[:,state_index])
             pp.pprint(transition_probabilities[state_index,:])
-        pp.ppirint(backtrace_table)
+        pp.pprint(backtrace_table)
         with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
             print("lookup table")
             print(lookup_table)
@@ -405,7 +417,7 @@ def run_viterbi_log_vectorized(adjacency_matrix, emission_probabilities, transit
             print("emission probabilities")
             print(emission_probabilities)
 
-    current_position = (len(current_fragmentary_sequence),len(emission_probabilities) - 1)
+    current_position = (len(current_fragmentary_sequence),emission_probabilities.shape[0] - 1)
     while(current_position != (-1,-1)):
         if(current_position == (-2,-2)):
             raise Exception("-2-2 state")
@@ -438,8 +450,10 @@ def run_viterbi_log_vectorized(adjacency_matrix, emission_probabilities, transit
                 sys.stderr.write("\n")
                 sys.stderr.write(str(adjacency_matrix[previous_state_in_sequence][current_state]))
                 sys.stderr.write("\n")
+                sys.stderr.flush()
+                sys.stdout.flush()
                 raise Exception("Illegal transition")
-        elif(current_state != 0 and current_state != len(emission_probabilities) - 1):
+        elif(current_state != 0 and current_state != emission_probabilities.shape[0] - 1):
             aligned_sequence += "-"
 
     backtraced_states = backtraced_states[::-1]
@@ -458,10 +472,10 @@ def get_matrices_top_1(output_hmm, input_dir, backbone_alignment, output_prefix)
     # print("output_hmm:")
     # pp.pprint(output_hmm)
 
-    M = np.zeros((num_states, num_states)) # HMM adjacency matrix
-    T = np.zeros(M.shape) # transition probability table
-    P = np.zeros((num_states, num_characters)) # emission probability table
-    current_emission_state_mask = np.zeros(num_states)
+    M = np.zeros((num_states, num_states), dtype="float32") # HMM adjacency matrix
+    T = np.zeros(M.shape, dtype="float32") # transition probability table
+    P = np.zeros((num_states, num_characters), dtype="float32") # emission probability table
+    current_emission_state_mask = np.zeros(num_states, dtype="float32")
 
     for current_column in output_hmm:
         for letter_index,letter in enumerate(alphabet):
@@ -531,17 +545,17 @@ def add_equal_entry_exit_probabilities(adjacency_matrix, transition_probabilitie
     new_adjacency_matrix = adjacency_matrix.copy()
     new_transition_probabilities = transition_probabilities.copy()
 
-    num_states = len(adjacency_matrix)
+    num_states = adjacency_matrix.shape[0]
     num_match_states = ((num_states - 3) / 3)
     p_total_entry = 0.1
     p_entry = p_total_entry / num_match_states
-    p_exit = 0.0001
+    p_exit = 0.1
 
     for current_state in range(1,num_states):
         if(is_match(current_state)):
             new_adjacency_matrix[0,current_state] = 1
             new_transition_probabilities[0,current_state] = p_entry
-        else:
+        elif(current_state != get_index("I", 0) and current_state != get_index("D", 1)):
             new_adjacency_matrix[0,current_state] = 0
             new_transition_probabilities[0,current_state] = 0
 
@@ -562,14 +576,24 @@ def add_equal_entry_exit_probabilities(adjacency_matrix, transition_probabilitie
 
     for current_state in range(1,num_states - 1):
         if(not is_insertion(current_state)):
-            new_adjacency_matrix[current_state,num_states - 1] = 1
-            new_transition_probabilities[current_state,num_states - 1] = p_exit
-            cumulative_sum = 1 - p_exit
-            old_transition_sum = 0.0
-            for destination_state in range(current_state + 1, num_states - 1):
-                old_transition_sum += transition_probabilities[current_state, destination_state]
-            for destination_state in range(current_state + 1, num_states - 1):
-                new_transition_probabilities[current_state, destination_state] = cumulative_sum * (transition_probabilities[current_state, destination_state] / old_transition_sum)
+            if(transition_probabilities[current_state, num_states - 1] < 1):
+                new_adjacency_matrix[current_state,num_states - 1] = 1
+                new_transition_probabilities[current_state,num_states - 1] = p_exit
+                cumulative_sum = 1 - p_exit
+                old_transition_sum = 0.0
+                original_destination_states_set = set()
+                for destination_state in range(current_state + 1, num_states - 1):
+                    if(transition_probabilities[current_state,destination_state] > 0):
+                        old_transition_sum += transition_probabilities[current_state, destination_state]
+                        original_destination_states_set.add(destination_state)
+                for destination_state in original_destination_states_set:
+                    new_transition_probabilities[current_state, destination_state] = cumulative_sum * (transition_probabilities[current_state, destination_state] / old_transition_sum)
+                    if(math.isnan(new_transition_probabilities[current_state,destination_state])):
+                        sys.stderr.write(f"{transition_probabilities[current_state,:]}\n")
+                        sys.stderr.write(f"old transition sum: {old_transition_sum}\n")
+                        sys.stderr.write(f"transition_probabilities[current_state,destination_state]: {transition_probabilities[current_state,destination_state]}\n")
+                        sys.stderr.write(f"cumulative_sum: {cumulative_sum}\n")
+                        sys.stderr.flush()
 
     if(DEBUG):
         for row_index,row in enumerate(new_transition_probabilities[:num_states-1,:]):
@@ -599,10 +623,10 @@ def get_matrices(output_hmm, input_dir, backbone_alignment, model, output_prefix
     # print("output_hmm:")
     # pp.pprint(output_hmm)
 
-    M = np.zeros((num_states, num_states)) # HMM adjacency matrix
-    T = np.zeros(M.shape) # transition probability table
-    P = np.zeros((num_states, num_characters)) # emission probability table
-    current_emission_state_mask = np.zeros(num_states)
+    M = np.zeros((num_states, num_states), dtype=np.int8) # HMM adjacency matrix
+    T = np.zeros(M.shape, dtype=np.float32) # transition probability table
+    P = np.zeros((num_states, num_characters), dtype=np.float32) # emission probability table
+    # current_emission_state_mask = np.zeros(num_states, dtype=np.float32)
 
     for current_column in output_hmm:
         for letter_index,letter in enumerate(alphabet):
@@ -722,7 +746,7 @@ def build_hmm_profiles(input_dir, mappings, output_prefix):
                 current_input_file = input_dir + "/input_" + str(current_hmm_index) + ".fasta"
                 current_output_file = output_prefix + "/" + str(current_hmm_index) + "-hmmbuild.profile"
                 print("calling hmmbuild with output at " + current_output_file)
-                subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmbuild", "--cpu", "1", "--dna", "--ere", "0.59", "--symfrac", "0.0", "--informat", "afa", current_output_file, current_input_file], stdout=stdout_f, stderr=stderr_f)
+                subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.2/hmmbuild", "--cpu", "1", "--dna", "--ere", "0.59", "--symfrac", "0.0", "--informat", "afa", current_output_file, current_input_file], stdout=stdout_f, stderr=stderr_f)
 
 def read_hmms(input_profile_files):
     hmms = {}
@@ -731,9 +755,9 @@ def read_hmms(input_profile_files):
         with HMMFile(current_input_file) as hmm_f:
             current_hmm = next(hmm_f)
 
-        match_probabilities = np.asarray(current_hmm.mat)
-        insertion_probabilities = np.asarray(current_hmm.ins)
-        transition_probabilities = np.asarray(current_hmm.trans)
+        match_probabilities = np.asarray(current_hmm.mat, dtype="float32")
+        insertion_probabilities = np.asarray(current_hmm.ins, dtype="float32")
+        transition_probabilities = np.asarray(current_hmm.trans, dtype="float32")
         hmms[current_hmm_index] = {
             "match": match_probabilities,
             "insertion": insertion_probabilities,
@@ -804,8 +828,9 @@ def get_probabilities_top_1_helper(input_dir, hmms, backbone_alignment, fragment
     return output_hmm
 
 def get_probabilities_helper(input_dir, hmms, support_value, weighting_scheme, input_sequence_files, backbone_alignment, fragmentary_sequence_id, fragmentary_sequence, mappings, bitscores, output_prefix):
-    print("the input hmms are")
-    pp.pprint(hmms)
+    if(VERBOSE):
+        print("the input hmms are")
+        pp.pprint(hmms)
     hmm_freq_dict = {}
     input_alignment_sizes = {}
     for current_hmm_index,current_input_alignment in input_sequence_files.items():
@@ -865,9 +890,9 @@ def get_probabilities_helper(input_dir, hmms, support_value, weighting_scheme, i
                 hmm_weights[current_hmm_file] = 1 / current_sum
             else:
                 hmm_weights[current_hmm_file] = 0
-
-        print("uncorrected hmm weights for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
-        pp.pprint(hmm_weights)
+        if(VERBOSE):
+            print("uncorrected hmm weights for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
+            pp.pprint(hmm_weights)
 
         is_hmm_weights_all_zero = True
         for hmm_weight_index in hmm_weights:
@@ -878,21 +903,24 @@ def get_probabilities_helper(input_dir, hmms, support_value, weighting_scheme, i
                 # hmm_weights[hmm_weight_index] = 1 / len(current_states_probabilities)
             for hmm_weight_index in hmm_weights:
                 hmm_weights[hmm_weight_index] = 1 / (len(hmm_weights))
-        print("zero corrected hmm weights for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
-        pp.pprint(hmm_weights)
-        npt.assert_almost_equal(sum(hmm_weights.values()), 1)
+        if(VERBOSE):
+            print("zero corrected hmm weights for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
+            pp.pprint(hmm_weights)
+            npt.assert_almost_equal(sum(hmm_weights.values()), 1)
 
         hmm_weights_tuple_arr = []
         for hmm_weight_index in hmm_weights:
             hmm_weights_tuple_arr.append((hmm_weight_index, hmm_weights[hmm_weight_index]))
         hmm_weights_tuple_arr.sort(key=lambda x: x[1], reverse=True)
-        print("hmm tuple arr for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
-        pp.pprint(hmm_weights_tuple_arr)
+
+        if(VERBOSE):
+            print("hmm tuple arr for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
+            pp.pprint(hmm_weights_tuple_arr)
 
         adjusted_support_value = support_value
 
         if(DEBUG):
-            assert adjusted_support_value > 0.0
+            assert adjusted_support_value >= 0.0
             assert adjusted_support_value <= 1.0
 
         hmm_weights = {}
@@ -910,17 +938,17 @@ def get_probabilities_helper(input_dir, hmms, support_value, weighting_scheme, i
                 hmm_weights[hmm_weight_index] = 1 / len(hmm_weights)
             else:
                 hmm_weights[hmm_weight_index] /= hmm_weight_value_sum
-
-        print("corrected hmm weights for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
-        pp.pprint(hmm_weights)
+        if(VERBOSE):
+            print("corrected hmm weights for " + str(fragmentary_sequence_id) + " at backbone state " + str(backbone_state_index))
+            pp.pprint(hmm_weights)
 
         for hmm_weight_index in hmm_weights:
             if(hmm_weight_index not in hmm_freq_dict):
                 hmm_freq_dict[hmm_weight_index] = 0
             hmm_freq_dict[hmm_weight_index] += 1
 
-        # if(DEBUG):
-        npt.assert_almost_equal(sum(hmm_weights.values()), 1)
+        if(DEBUG):
+            npt.assert_almost_equal(sum(hmm_weights.values()), 1)
 
         if(backbone_state_index == 0):
             # this is the begin state
@@ -993,7 +1021,8 @@ def get_probabilities_helper(input_dir, hmms, support_value, weighting_scheme, i
 
                 output_hmm[backbone_state_index]["insert_loop"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm][4]
                 output_hmm[backbone_state_index]["self_match_to_insert"] += hmm_weights[current_hmm_file] * current_states_probabilities[current_hmm_file]["transition"][current_state_in_hmm][1]
-    pp.pprint(hmm_freq_dict)
+    if(VERBOSE):
+        pp.pprint(hmm_freq_dict)
     return output_hmm
 
 def get_bitscores_helper(input_dir, num_hmms, input_profile_files, backbone_alignment, fragmentary_sequence_file, output_prefix):
@@ -1003,7 +1032,7 @@ def get_bitscores_helper(input_dir, num_hmms, input_profile_files, backbone_alig
         with open(output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.out", "w") as stdout_f:
             with open(output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.err", "w") as stderr_f:
                 current_search_file = output_prefix + "/" + str(current_hmm_index) + "-hmmsearch.output"
-                subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.1/hmmsearch", "--noali", "--cpu", "1", "-o", current_search_file, "-E", string_infinity, "--domE", string_infinity, "--max", current_input_file,fragmentary_sequence_file], stdout=stdout_f, stderr=stderr_f)
+                subprocess.call(["/usr/bin/time", "-v", "/opt/sepp/.sepp/bundled-v4.5.2/hmmsearch", "--noali", "--cpu", "1", "-o", current_search_file, "-E", string_infinity, "--domE", string_infinity, "--max", current_input_file,fragmentary_sequence_file], stdout=stdout_f, stderr=stderr_f)
 
     for fragmentary_sequence_record in SeqIO.parse(fragmentary_sequence_file, "fasta"):
         current_fragmentary_sequence = fragmentary_sequence_record.seq
