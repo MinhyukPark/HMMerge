@@ -4,25 +4,50 @@ Do you want to merge multiple profile HMMs into one?
 
 ## How to Run
 ---
-### The Mapping Generator
+There are 2 ways to run HMMerge depending on the input data available. Regardless of which way is used, the output file will be available at `<Output directory>/HMMerge.aligned.fasta`.
+
+
+1. Most users fall into this category.
+Required Inputs:
+- Backbone alignment in FASTA format
+- Backbone tree in NEWICK format
+- Sequences to align in FASTA format
 ```
-input_fasta_filenames = ["/path/to/fasta/file/with/all/gap/columns/removed", "/path/to/another/fasta/file/with/all/gap/columns/removed"]
-backbone_alignment = "/path/to/backbone/alignment"
-mapping = create_mappings_helper(input_fasta_filenames, backbone_alignment)
+python <git root>/decompose_fasta_version.py --input-tree <Backbone tree> --sequence-file <Backbone alignment> --output-prefix <Output folder for decomposed alignments>/input_ --maximum-size <Decompose size>
+
+pushd <Folder with decomposed alignments>
+for f in *.fasta
+do
+    trimal -in ${f} -out ${f} -noallgaps
+done
+popd
+
+python <git root>/main.py --input-dir <Folder with decomposed alignments> --backbone-alignment <Backbone alignment> --query-sequence-file <Query sequences> --output-prefix <Output directory> --num-processes <Num cpus> --model {dna|amino}
 ```
-Mapping will be a map of input fasta filename indices to a secondary map
 
-The secondary map is a mapping of column index in the backbone alignment to the corresponding column index in the input fasta filename
+2. No backbone tree, only backbone alignment and query sequences
+Required Inputs:
+- Backbone alignment in FASTA format
+- Sequences to align in FASTA format
+- Directory containing decomposed backbone alignment in FASTA format
 
-For some example input files and expected outputs, look at [the test directories](test/merge_test) and [the test file](test.py)
+Note: Make sure that the directory containing decomposed backbone alignment follows these two rules.
+a. The files need to follow the naming format input\_<integer starting from 0>.fasta
+b. The fasta files must not have columns that are all gaps. If so, use trimal or other equivalent utilities to remove columns with all gaps.
 
+```
+python <git root>/main.py --input-dir <Folder with decomposed alignments> --backbone-alignment <Backbone alignment> --query-sequence-file <Query sequences> --output-prefix <Output prefix> --num-processes <num cpus> --model {dna|amino}
+```
 
 ## Requirements
 ---
 * biopython
 * click
+* dendropy (if using a backbone tree)
+* numpy
 * pyhmmer-sepp
-* pytest
+* pytest (for testing)
+* scipy
 
 ## Testing
 ---
