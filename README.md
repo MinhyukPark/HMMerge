@@ -57,3 +57,7 @@ cd HMMerge
 pytest test.py
 ```
 
+## What HMMerge does
+---
+HMMerge, given a backbone alignment, its decomposition, and a set of query sequences, builds an HMM on each of the decomposed subset backbone alignments, assigns probability weights on each HMM based on the likelihood of havingt emitted the query sequence, merges all the HMMs based on the weights, and aligns the query sequence using the merged HMM. Individual query sequences are aligned independently onto the backbone alignment and merged at the end using transitivity to the backbone alignment.
+
