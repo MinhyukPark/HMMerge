@@ -311,5 +311,5 @@ def test_merge_2_subsets_2_match_regions():
         "s4":       "AAAA----GGGGG",
         "s5":       "AAAA----GGGGG",
         "s6":       "AAAA----GGGGG",
-        "backbone_indices": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+        "backbone_indices": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
     }

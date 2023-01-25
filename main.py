@@ -35,22 +35,25 @@ class Logger:
         self.file_handle = open(self.log_path, "w")
 
     def __del__(self):
-        self.file_handle.close()
+        if(self.file_handle):
+            self.file_handle.close()
 
     def info(self, statement):
-        self.file_handle.write(f"[INFO]: {statement}\n")
+        if(self.file_handle):
+            self.file_handle.write(f"[INFO]: {statement}\n")
 
     def verbose(self, statement):
-        if(VERBOSE):
+        if(self.file_handle and VERBOSE):
             self.file_handle.write(f"[DEBUG]: {statement}\n")
 
     def verbose_pprint(self, to_be_printed):
-        if(VERBOSE):
+        if(self.file_handle and VERBOSE):
             with np.printoptions(precision=3, suppress=True, linewidth=np.inf):
                 pprint.pprint(to_be_printed, self.file_handle)
 
     def error(self, statement):
-        self.file_handle.write(f"[ERROR]: {statement}\n")
+        if(self.file_handle):
+            self.file_handle.write(f"[ERROR]: {statement}\n")
 
 logger = Logger()
 
@@ -295,7 +298,8 @@ class HMMManipulation:
                 if(current_hmm_file in current_hmm_bitscores):
                     for compare_to_hmm_file in current_states_probabilities:
                         if(compare_to_hmm_file in current_hmm_bitscores):
-                            current_sum += 2**(float(current_hmm_bitscores[compare_to_hmm_file]) - float(current_hmm_bitscores[current_hmm_file]) + np.log2(input_alignment_sizes[compare_to_hmm_file] / input_alignment_sizes[current_hmm_file]))
+                            with np.errstate(divide='ignore'):
+                                current_sum += 2**(float(current_hmm_bitscores[compare_to_hmm_file]) - float(current_hmm_bitscores[current_hmm_file]) + np.log2(input_alignment_sizes[compare_to_hmm_file] / input_alignment_sizes[current_hmm_file]))
                     hmm_weights[current_hmm_file] = 1 / current_sum
                 else:
                     hmm_weights[current_hmm_file] = 0
@@ -775,7 +779,8 @@ class HMMerge():
         sparse_transition_probabilities = hmm_manipulation.sparse_transition_probabilities
         alphabet = hmm_manipulation.alphabet
         logger.info("starting viterbi for sequence " + str(fragmentary_sequence_id))
-        viterbi_run = Viterbi(np.asarray(sparse_adjacency_matrix.todense()), np.log2(np.asarray(sparse_emission_probabilities.todense())), np.log2(np.asarray(sparse_transition_probabilities.todense())), alphabet, fragmentary_sequence, fragmentary_sequence_id)
+        with np.errstate(divide='ignore'):
+            viterbi_run = Viterbi(np.asarray(sparse_adjacency_matrix.todense()), np.log2(np.asarray(sparse_emission_probabilities.todense())), np.log2(np.asarray(sparse_transition_probabilities.todense())), alphabet, fragmentary_sequence, fragmentary_sequence_id)
         viterbi_run.run()
         aligned_sequences = viterbi_run.aligned_result
         backtraced_states = viterbi_run.backtraced_states
